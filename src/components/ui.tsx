@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { formatCOP } from '@/lib/format';
-import type { MatchStatus, Offer } from '@/lib/types';
+import type { MatchStatus, Offer, ProviderId } from '@/lib/types';
 
 export function Money({ value }: { value: number }) {
   return <span className="num">{formatCOP(value)}</span>;
@@ -63,5 +63,33 @@ export function Logo() {
       <path d="M12.5 12c0-2.4 1.6-4 3.5-4s3.5 1.6 3.5 4" fill="none" stroke="#f5f7f1" strokeWidth="1.8" strokeLinecap="round" />
       <circle cx="16" cy="17.5" r="2.2" fill="#f4b000" />
     </svg>
+  );
+}
+
+/** Insignia propia de cada supermercado (iniciales y color fijo; no son sus logos). */
+const PROVIDER_MARK: Record<ProviderId, { abbr: string; color: string }> = {
+  exito: { abbr: 'ÉX', color: '#1f6f78' },
+  d1: { abbr: 'D1', color: '#6b4fa0' },
+  euro: { abbr: 'EU', color: '#2a5fa8' },
+  rappi: { abbr: 'RA', color: '#5b6470' },
+  ara: { abbr: 'AR', color: '#8a5a2b' },
+  vaquita: { abbr: 'LV', color: '#5f6f1f' },
+};
+
+export function ProviderMark({ id, size = 'm' }: { id: ProviderId; size?: 's' | 'm' }) {
+  const m = PROVIDER_MARK[id];
+  return (
+    <span className={`pmark pmark-${size}`} style={{ background: m.color }} aria-hidden="true">
+      {m.abbr}
+    </span>
+  );
+}
+
+export function ProviderName({ id, name, size = 'm' }: { id: ProviderId; name: string; size?: 's' | 'm' }) {
+  return (
+    <span className="pname">
+      <ProviderMark id={id} size={size} />
+      <span>{name}</span>
+    </span>
   );
 }

@@ -10,5 +10,6 @@ export async function GET() {
   return NextResponse.json({
     providers,
     features: { photoImport: Boolean(process.env.ANTHROPIC_API_KEY) },
+    version: process.env.RENDER_GIT_COMMIT || 'dev',
   });
 }

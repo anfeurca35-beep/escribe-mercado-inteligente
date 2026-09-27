@@ -486,7 +486,7 @@ details.panel summary {
   margin-top: 12px;
 }
 
-.progress span {
+.progress > span {
   font-size: 0.82rem;
   padding: 4px 10px;
   border-radius: 999px;
@@ -494,11 +494,11 @@ details.panel summary {
   background: var(--surface);
 }
 
-.progress span.loading {
+.progress > span.loading {
   border-style: dashed;
 }
 
-.progress span.error {
+.progress > span.error {
   color: var(--st-no);
 }
 
@@ -942,4 +942,48 @@ table.coverage tr:last-child td {
   .offer-actions {
     grid-column: 1 / -1;
   }
+}
+
+/* ---------- insignia de supermercado ---------- */
+
+.pname {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  line-height: 1;
+}
+
+.pmark-m {
+  width: 26px;
+  height: 26px;
+  font-size: 0.68rem;
+}
+
+.pmark-s {
+  width: 20px;
+  height: 20px;
+  font-size: 0.56rem;
+}
+
+@media (min-width: 421px) {
+  .offer-row {
+    grid-template-columns: 7rem 1fr auto;
+  }
+}
+
+.ticket .store h3 .pname {
+  font-size: 1.05rem;
 }

@@ -235,3 +235,12 @@ test('producción: productos realmente distintos siguen pidiendo confirmación (
   ]);
   assert.equal(o.selection, 'pendiente');
 });
+
+test('resultados guardados por una versión anterior (sin opciones) se descartan', async () => {
+  const { resultsAreCurrent } = await import('../src/lib/storage');
+  const viejo = { city: 'medellin' as const, signature: '', responses: [{ providerId: 'exito' as const, city: 'medellin' as const, fetchedAt: '', offers: [{ itemId: 'a' }] }] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assert.equal(resultsAreCurrent(viejo as any), false);
+  const actual = { city: 'medellin' as const, signature: '', responses: [{ providerId: 'exito' as const, city: 'medellin' as const, fetchedAt: '', offers: [base()] }] };
+  assert.equal(resultsAreCurrent(actual), true);
+});

@@ -44,11 +44,30 @@ export function loadState(): AppState {
     return {
       version: 1,
       city: isCityId(parsed.city) ? parsed.city : null,
-      lists: Array.isArray(parsed.lists) ? parsed.lists.filter((l) => l && typeof l.id === 'string' && Array.isArray(l.items)) : [],
+      lists: Array.isArray(parsed.lists)
+        ? parsed.lists
+            .filter((l) => l && typeof l.id === 'string' && Array.isArray(l.items))
+            .map((l) => (l.results && !resultsAreCurrent(l.results) ? { ...l, results: null } : l))
+        : [],
     };
   } catch {
     return emptyState();
   }
+}
+
+/**
+ * Los resultados guardados por versiones anteriores (sin opciones por producto)
+ * se descartan: la lista se conserva y basta con volver a comparar.
+ */
+export function resultsAreCurrent(results: SavedResults): boolean {
+  return (
+    Array.isArray(results.responses) &&
+    results.responses.every(
+      (r) =>
+        Array.isArray(r.offers) &&
+        r.offers.every((o) => Array.isArray(o.candidates) && Array.isArray(o.others) && typeof o.selection === 'string'),
+    )
+  );
 }
 
 export function saveState(state: AppState): boolean {

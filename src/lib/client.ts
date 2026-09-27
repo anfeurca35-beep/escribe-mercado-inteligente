@@ -5,6 +5,7 @@ import type { CityId, ListItem, ProviderId, ProviderInfo, ProviderPricesResponse
 export interface ProvidersPayload {
   providers: ProviderInfo[];
   features: { photoImport: boolean };
+  version?: string;
 }
 
 export async function fetchProviders(): Promise<ProvidersPayload> {

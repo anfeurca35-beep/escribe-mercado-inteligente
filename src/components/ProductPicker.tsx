@@ -4,17 +4,23 @@ import { useState } from 'react';
 import { productKey } from '@/lib/providers/lookup';
 import { parsePresentation, formatSize } from '@/lib/units';
 import type { UserSelection } from '@/lib/selection';
-import type { Candidate, Offer } from '@/lib/types';
-import { Badge, Money } from './ui';
+import type { Candidate, Offer, ProviderId } from '@/lib/types';
+import { Badge, Money, ProviderName } from './ui';
 
 interface Props {
   itemName: string;
+  providerId: ProviderId;
   providerName: string;
   offer: Offer;
   /** Clave del producto elegido por el usuario, si lo hay. */
   selectedKey: string | null;
   onPick: (sel: UserSelection | null) => void;
   onClose: () => void;
+}
+
+function sameStore(a: string, b: string): boolean {
+  const n = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/^tiendas?\s+/, '').trim();
+  return n(a) === n(b);
 }
 
 function presentationOf(name: string): string {
@@ -63,7 +69,12 @@ function CandidateCard({
         <Badge tone={MATCH_TONE[c.match]}>{MATCH_TEXT[c.match]}</Badge>
         <strong className="cand-name">{p.name}</strong>
         <span className="muted small">
-          {[p.brand, presentation, providerName, p.seller && p.seller !== providerName ? `vende ${p.seller}` : null]
+          {[
+            p.brand,
+            presentation,
+            providerName,
+            p.seller && !sameStore(p.seller, providerName) ? `vende ${p.seller}` : null,
+          ]
             .filter(Boolean)
             .join(' · ')}
         </span>
@@ -96,7 +107,7 @@ function CandidateCard({
   );
 }
 
-export function ProductPicker({ itemName, providerName, offer, selectedKey, onPick, onClose }: Props) {
+export function ProductPicker({ itemName, providerId, providerName, offer, selectedKey, onPick, onClose }: Props) {
   const hasCandidates = offer.candidates.length > 0;
   const [showOthers, setShowOthers] = useState(!hasCandidates);
   const pick = (c: Candidate) => onPick({ kind: 'producto', key: c.key, itemName });
@@ -106,8 +117,9 @@ export function ProductPicker({ itemName, providerName, offer, selectedKey, onPi
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
       <div className="sheet wide" role="dialog" aria-modal="true" aria-labelledby="picker-title" onClick={(e) => e.stopPropagation()}>
-        <p className="muted small" style={{ margin: 0 }}>
-          {itemName} · {providerName}
+        <p className="small" style={{ margin: 0, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <ProviderName id={providerId} name={providerName} />
+          <span className="muted">· {itemName}</span>
         </p>
         <h2 id="picker-title" style={{ marginTop: 4 }}>
           {nothing

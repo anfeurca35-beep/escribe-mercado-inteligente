@@ -8,7 +8,7 @@ import { applySelections, selectionFor, type UserSelection } from '@/lib/selecti
 import { listSignature, type ShoppingList } from '@/lib/storage';
 import type { CityId, ListItem, Offer, ProviderId, ProviderInfo } from '@/lib/types';
 import { ProductPicker } from './ProductPicker';
-import { Badge, Legend, Money, OfferBadge } from './ui';
+import { Badge, Legend, Money, OfferBadge, ProviderName } from './ui';
 
 export type ProgressState = { state: 'loading' } | { state: 'done' } | { state: 'error'; message: string };
 
@@ -126,7 +126,7 @@ function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }
         {plan.byProvider.map((g) => (
           <div className="store" key={g.providerId}>
             <h3>
-              <span>{g.name}</span>
+              <ProviderName id={g.providerId} name={g.name} />
               <Money value={g.subtotal} />
             </h3>
             {g.lines.map((l) => (
@@ -227,7 +227,7 @@ function CoverageTable({ coverage, providers }: { coverage: ProviderCoverage[]; 
             return (
               <tr key={c.providerId}>
                 <th scope="row">
-                  {c.name}
+                  <ProviderName id={c.providerId} name={c.name} size="s" />
                   <br />
                   <span className="muted small" style={{ fontWeight: 400 }}>
                     {c.waiting
@@ -295,6 +295,7 @@ function OfferActions({ offer, onOpen }: { offer: Offer; onOpen: () => void }) {
 }
 
 function OfferRow({ offer, providerName, onOpen }: { offer: Offer; providerName: string; onOpen: () => void }) {
+  const providerLabel = <ProviderName id={offer.providerId} name={providerName} />;
   const p = offer.product;
   const decided = offer.selection === 'auto' || offer.selection === 'usuario';
   const showPrice = offer.status === 'OK' && p?.price != null && offer.selection !== 'rechazado';
@@ -302,7 +303,7 @@ function OfferRow({ offer, providerName, onOpen }: { offer: Offer; providerName:
   const pending = offer.selection === 'pendiente';
   return (
     <div className={`offer-row${aside ? ' aside' : ''}${pending ? ' pending' : ''}`}>
-      <span className="prov">{providerName}</span>
+      <span className="prov">{providerLabel}</span>
       <div className="body">
         <OfferBadge offer={offer} />
         {p && offer.selection !== 'rechazado' && (
@@ -367,7 +368,9 @@ function ProductDetail({
           <OfferRow key={p.id} offer={o} providerName={p.name} onOpen={() => onOpen(item.id, p.id)} />
         ) : (
           <div className="offer-row" key={p.id}>
-            <span className="prov">{p.name}</span>
+            <span className="prov">
+              <ProviderName id={p.id} name={p.name} />
+            </span>
             <span className="muted small">Sin consultar todavía.</span>
             <span />
           </div>
@@ -404,7 +407,7 @@ function PendingBanner({
       <div className="pending-list">
         {pending.map((o) => (
           <button key={`${o.itemId}-${o.providerId}`} className="btn secondary" onClick={() => onOpen(o.itemId, o.providerId)}>
-            {names.get(o.itemId)} · {pname.get(o.providerId)}
+            <ProviderName id={o.providerId} name={`${names.get(o.itemId)} · ${pname.get(o.providerId)}`} size="s" />
           </button>
         ))}
       </div>
@@ -499,7 +502,7 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
           const label = st.state === 'loading' ? 'consultando…' : st.state === 'done' ? 'listo' : 'error';
           return (
             <span key={p.id} className={st.state}>
-              {p.name}: {label}
+              <ProviderName id={p.id} name={`${p.name}: ${label}`} size="s" />
             </span>
           );
         })}
@@ -558,6 +561,7 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
           return (
             <ProductPicker
               itemName={itemName}
+              providerId={picking.providerId}
               providerName={nameOf.get(picking.providerId) ?? picking.providerId}
               offer={offer}
               selectedKey={sel?.kind === 'producto' ? sel.key : null}

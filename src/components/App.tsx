@@ -71,6 +71,19 @@ export function App() {
     setReady(true);
     fetchProviders()
       .then((p) => {
+        // Si el servidor ya tiene una versión más nueva que esta página, recargar una vez.
+        const mine = process.env.NEXT_PUBLIC_APP_VERSION;
+        if (p.version && mine && p.version !== mine && p.version !== 'dev') {
+          try {
+            if (window.sessionStorage.getItem('mi:recargado') !== p.version) {
+              window.sessionStorage.setItem('mi:recargado', p.version);
+              window.location.reload();
+              return;
+            }
+          } catch {
+            /* sin sessionStorage: se continúa con esta versión */
+          }
+        }
         setProviders(p.providers);
         setPhotoImport(p.features.photoImport);
       })
