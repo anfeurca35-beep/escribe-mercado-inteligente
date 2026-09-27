@@ -215,7 +215,9 @@ export function App() {
                 const at = l.results?.responses.map((r) => r.fetchedAt).sort()[0];
                 return (
                   <div className="list-card" key={l.id}>
-                    <button className="open" onClick={() => setView({ name: l.results?.responses.length ? 'results' : 'edit', listId: l.id })}>
+                    <button className="open" onClick={() =>
+                        setView(l.results?.responses.length ? { name: 'results', listId: l.id } : { name: 'edit', listId: l.id })
+                      }>
                       <span className="title">{l.name || 'Sin nombre'}</span>
                       <span className="muted small">
                         {l.items.length} productos{at ? ` · precios ${formatRelative(at)}` : ' · sin comparar'}
