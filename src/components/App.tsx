@@ -57,6 +57,48 @@ function unavailableResponse(providerId: ProviderId, city: CityId, list: Shoppin
   };
 }
 
+const VIEW_KEY = 'mi:vista';
+const RESUME_KEY = 'mi:reanudar';
+const RELOADED_KEY = 'mi:recargado';
+
+/** ¿El servidor tiene una versión distinta (más nueva) que la de esta página? */
+function isNewerVersion(serverVersion: string | undefined): boolean {
+  const mine = process.env.NEXT_PUBLIC_APP_VERSION;
+  return !!serverVersion && !!mine && serverVersion !== 'dev' && serverVersion !== mine;
+}
+
+/**
+ * Recarga la página para usar la versión nueva. Si `compareListId` se indica,
+ * al volver se vuelven a consultar los precios de esa lista. Devuelve false si
+ * ya se recargó por esa versión (evita recargas en bucle).
+ */
+function reloadForUpdate(serverVersion: string, compareListId: string | null): boolean {
+  try {
+    if (window.sessionStorage.getItem(RELOADED_KEY) === serverVersion) return false;
+    window.sessionStorage.setItem(RELOADED_KEY, serverVersion);
+    if (compareListId) {
+      window.sessionStorage.setItem(RESUME_KEY, JSON.stringify({ view: 'results', listId: compareListId, compare: true }));
+    }
+  } catch {
+    return false;
+  }
+  window.location.reload();
+  return true;
+}
+
+function readResume(): { view: 'edit' | 'results'; listId: string; compare: boolean } | null {
+  try {
+    const raw = window.sessionStorage.getItem(RESUME_KEY) ?? window.sessionStorage.getItem(VIEW_KEY);
+    window.sessionStorage.removeItem(RESUME_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw) as { view?: unknown; listId?: unknown; compare?: unknown };
+    if ((r.view !== 'edit' && r.view !== 'results') || typeof r.listId !== 'string') return null;
+    return { view: r.view, listId: r.listId, compare: r.compare === true };
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [state, setState] = useState<AppState>(emptyState);
   const [ready, setReady] = useState(false);
@@ -70,32 +112,54 @@ export function App() {
   const [cross, setCross] = useState<CrossSearch | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const busyRef = useRef(false);
+  busyRef.current = busy;
+  const runCompareRef = useRef<(listId: string, city: CityId, provs?: ProviderInfo[]) => Promise<void>>(async () => {});
 
   useEffect(() => {
-    setState(loadState());
+    const loaded = loadState();
+    setState(loaded);
     setReady(true);
+    // Volver a la pantalla en la que estaba el usuario antes de recargar.
+    const resume = readResume();
+    if (resume && loaded.lists.some((l) => l.id === resume.listId)) {
+      setView(resume.view === 'results' ? { name: 'results', listId: resume.listId } : { name: 'edit', listId: resume.listId });
+    }
     fetchProviders()
       .then((p) => {
-        // Si el servidor ya tiene una versión más nueva que esta página, recargar una vez.
-        const mine = process.env.NEXT_PUBLIC_APP_VERSION;
-        if (p.version && mine && p.version !== mine && p.version !== 'dev') {
-          try {
-            if (window.sessionStorage.getItem('mi:recargado') !== p.version) {
-              window.sessionStorage.setItem('mi:recargado', p.version);
-              window.location.reload();
-              return;
-            }
-          } catch {
-            /* sin sessionStorage: se continúa con esta versión */
-          }
-        }
+        if (isNewerVersion(p.version) && reloadForUpdate(p.version as string, null)) return;
         setProviders(p.providers);
         setPhotoImport(p.features.photoImport);
+        if (resume?.compare && loaded.city && loaded.lists.some((l) => l.id === resume.listId)) {
+          void runCompareRef.current(resume.listId, loaded.city, p.providers);
+        }
       })
       .catch(() => {
         /* se usa la información local de proveedores */
       });
+
+    // Al volver a la pestaña, revisar si hay una versión nueva publicada.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || busyRef.current) return;
+      fetchProviders()
+        .then((p) => {
+          if (isNewerVersion(p.version)) reloadForUpdate(p.version as string, null);
+        })
+        .catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
+
+  // Recordar la pantalla actual (para volver a ella tras una recarga).
+  useEffect(() => {
+    try {
+      if (view.name === 'home') window.sessionStorage.removeItem(VIEW_KEY);
+      else window.sessionStorage.setItem(VIEW_KEY, JSON.stringify({ view: view.name, listId: view.listId }));
+    } catch {
+      /* sin sessionStorage */
+    }
+  }, [view]);
 
   useEffect(() => {
     if (ready) setStorageOk(saveState(state));
@@ -129,7 +193,8 @@ export function App() {
     setView({ name: 'home' });
   }
 
-  async function runCompare(listId: string, city: CityId) {
+  async function runCompare(listId: string, city: CityId, provs: ProviderInfo[] = providers) {
+    const providers = provs;
     const list = stateRef.current.lists.find((l) => l.id === listId);
     if (!list || list.items.length === 0) return;
     const signature = listSignature(list.items);
@@ -217,9 +282,13 @@ export function App() {
       }),
     }));
 
+    // Al elegir un producto siempre se busca en los demás supermercados; al deshacer
+    // o rechazar, solo si cambia la búsqueda.
     const changed = (prev?.text ?? null) !== (next?.text ?? null);
     const city = state.city ?? list.results?.city;
-    if (changed && city && list.results) void crossSearch(listId, item, next, providerId, selections, city);
+    if ((changed || sel?.kind === 'producto') && city && list.results) {
+      void crossSearch(listId, item, next, providerId, selections, city, sel?.kind === 'producto' ? 'eleccion' : 'deshacer');
+    }
   }
 
   /** Busca el mismo producto (o vuelve a buscar el original) en los supermercados sin decisión del usuario. */
@@ -230,6 +299,7 @@ export function App() {
     sourceProvider: ProviderId,
     selections: SelectionMap,
     city: CityId,
+    reason: CrossSearch['reason'],
   ) {
     const targets = providers.filter(
       (p) =>
@@ -238,14 +308,15 @@ export function App() {
         (p.cities === 'todas' || p.cities.includes(city)) &&
         selectionFor(selections, item.id, item.name, p.id) === null,
     );
-    if (targets.length === 0) return;
     setCross({
       listId,
       itemId: item.id,
       text: refinement?.text ?? null,
       fromProvider: sourceProvider,
+      reason,
       status: Object.fromEntries(targets.map((p) => [p.id, 'loading'])) as CrossSearch['status'],
     });
+    if (targets.length === 0) return;
     const matches = new Map<string, string>(refinement ? [[item.id, refinement.text]] : []);
     await Promise.all(
       targets.map(async (p) => {
@@ -269,10 +340,19 @@ export function App() {
     );
   }
 
-  function compare(listId: string) {
+  runCompareRef.current = runCompare;
+
+  async function compare(listId: string) {
     if (!state.city) {
       setPicker({ open: true, thenCompare: listId });
       return;
+    }
+    // Antes de consultar, asegurarse de estar usando la versión publicada más reciente.
+    try {
+      const p = await fetchProviders();
+      if (isNewerVersion(p.version) && reloadForUpdate(p.version as string, listId)) return;
+    } catch {
+      /* si falla la verificación, se consulta con esta versión */
     }
     void runCompare(listId, state.city);
   }

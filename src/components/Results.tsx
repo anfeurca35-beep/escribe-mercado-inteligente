@@ -19,6 +19,8 @@ export interface CrossSearch {
   /** Texto buscado; null = se volvió a buscar lo que escribió el usuario. */
   text: string | null;
   fromProvider: ProviderId;
+  /** 'eleccion' = el usuario eligió un producto; 'deshacer' = deshizo o rechazó. */
+  reason: 'eleccion' | 'deshacer';
   status: Partial<Record<ProviderId, 'loading' | 'done' | 'error'>>;
 }
 
@@ -444,6 +446,11 @@ function CrossNotice({
           <>
             Según tu elección en {pname.get(cross.fromProvider)}, buscamos: <strong>«{cross.text}»</strong>
           </>
+        ) : cross.reason === 'eleccion' ? (
+          <>
+            El producto que elegiste en {pname.get(cross.fromProvider)} coincide con lo que escribiste; buscamos:{' '}
+            <strong>«{item.name}»</strong>
+          </>
         ) : (
           <>
             Volvimos a buscar lo que escribiste: <strong>«{item.name}»</strong>
@@ -468,6 +475,11 @@ function CrossNotice({
           );
         })}
       </ul>
+      {!loading && entries.length === 0 && (
+        <p className="small muted" style={{ margin: 0 }}>
+          En los demás supermercados ya decidiste qué producto es. Toca «Cambiar» en cada uno si quieres volver a buscarlo.
+        </p>
+      )}
       {!loading && (
         <button className="link-btn small" style={{ marginTop: 8 }} onClick={onDismiss}>
           Cerrar aviso
