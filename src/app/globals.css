@@ -1074,3 +1074,43 @@ table.coverage tr:last-child td {
   font-size: 0.82rem;
   color: var(--muted);
 }
+
+/* ---------- eliminar listas ---------- */
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.confirm-row .btn {
+  min-height: 40px;
+  padding: 6px 14px;
+}
+
+.list-card .confirm-row {
+  justify-content: flex-end;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100% - 32px);
+  padding: 12px 16px;
+  border-radius: var(--radius-m);
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(23, 38, 30, 0.25);
+}
+
+.toast .link-btn {
+  color: var(--mango);
+  font-weight: 700;
+}

@@ -110,6 +110,9 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [storageOk, setStorageOk] = useState(true);
   const [cross, setCross] = useState<CrossSearch | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const [undo, setUndo] = useState<{ list: ShoppingList; index: number } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const busyRef = useRef(false);
@@ -151,6 +154,12 @@ export function App() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
+  useEffect(() => {
+    if (!undo) return;
+    const t = window.setTimeout(() => setUndo(null), 10000);
+    return () => window.clearTimeout(t);
+  }, [undo]);
+
   // Recordar la pantalla actual (para volver a ella tras una recarga).
   useEffect(() => {
     try {
@@ -181,13 +190,31 @@ export function App() {
     setView({ name: 'edit', listId: list.id });
   }
 
+  // Borrar con confirmación dentro de la app (algunos navegadores bloquean window.confirm).
   function deleteList(id: string) {
-    if (!window.confirm('¿Eliminar esta lista? Esta acción no se puede deshacer.')) return;
+    const idx = stateRef.current.lists.findIndex((l) => l.id === id);
+    const removed = stateRef.current.lists[idx];
+    if (!removed) return;
+    setConfirmDelete(null);
     setState((s) => ({ ...s, lists: s.lists.filter((l) => l.id !== id) }));
+    setUndo({ list: removed, index: idx });
+  }
+
+  function undoDelete() {
+    if (!undo) return;
+    const { list, index } = undo;
+    setState((s) => {
+      if (s.lists.some((l) => l.id === list.id)) return s;
+      const lists = [...s.lists];
+      lists.splice(Math.min(index, lists.length), 0, list);
+      return { ...s, lists };
+    });
+    setUndo(null);
   }
 
   function deleteAll() {
-    if (!window.confirm('¿Borrar todas tus listas, la ciudad elegida y los precios guardados en este dispositivo?')) return;
+    setConfirmWipe(false);
+    setUndo(null);
     clearState();
     setState(emptyState());
     setView({ name: 'home' });
@@ -398,6 +425,17 @@ export function App() {
             </p>
           </section>
 
+          {undo && (
+            <div className="toast" role="status">
+              <span>
+                Eliminaste «{undo.list.name || 'Sin nombre'}».
+              </span>
+              <button className="link-btn" onClick={undoDelete}>
+                Deshacer
+              </button>
+            </div>
+          )}
+
           <section className="section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h2>Mis listas</h2>
@@ -425,12 +463,35 @@ export function App() {
                         {l.items.length} productos{at ? ` · precios ${formatRelative(at)}` : ' · sin comparar'}
                       </span>
                     </button>
-                    <button className="btn secondary" onClick={() => setView({ name: 'edit', listId: l.id })}>
-                      Editar
-                    </button>
-                    <button className="icon-btn" aria-label={`Eliminar ${l.name}`} onClick={() => deleteList(l.id)}>
-                      ×
-                    </button>
+                    {confirmDelete === l.id ? (
+                      <div className="confirm-row" role="group" aria-label={`Confirmar eliminar ${l.name}`}>
+                        <span className="small">¿Eliminar esta lista?</span>
+                        <button className="btn danger" onClick={() => deleteList(l.id)}>
+                          Eliminar
+                        </button>
+                        <button className="btn ghost" onClick={() => setConfirmDelete(null)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button className="btn secondary" onClick={() => setView({ name: 'edit', listId: l.id })}>
+                          Editar
+                        </button>
+                        <button className="icon-btn" aria-label={`Eliminar ${l.name}`} title="Eliminar lista" onClick={() => setConfirmDelete(l.id)}>
+                          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                            <path
+                              d="M4 7h16M9 7V4.8c0-.4.4-.8.8-.8h4.4c.4 0 .8.4.8.8V7m-8.5 0 .8 12.2c.1.9.8 1.8 1.8 1.8h5.8c1 0 1.7-.9 1.8-1.8L18.5 7M10 11v6M14 11v6"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })
@@ -445,10 +506,27 @@ export function App() {
             </p>
             <p style={{ margin: 0 }}>
               Tus listas se guardan solo en este dispositivo.{' '}
-              <button className="link-btn" onClick={deleteAll}>
-                Borrar todos mis datos
-              </button>
+              {confirmWipe ? null : (
+                <button className="link-btn" onClick={() => setConfirmWipe(true)}>
+                  Borrar todos mis datos
+                </button>
+              )}
             </p>
+            {confirmWipe && (
+              <div className="notice warn small" style={{ marginTop: 8 }}>
+                <p style={{ margin: '0 0 8px' }}>
+                  ¿Borrar todas tus listas, la ciudad elegida y los precios guardados en este dispositivo? No se puede deshacer.
+                </p>
+                <div className="confirm-row">
+                  <button className="btn danger" onClick={deleteAll}>
+                    Borrar todo
+                  </button>
+                  <button className="btn ghost" onClick={() => setConfirmWipe(false)}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
           </aside>
         </main>
       ) : view.name === 'edit' ? (
