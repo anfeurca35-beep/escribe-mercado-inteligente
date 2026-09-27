@@ -19,12 +19,20 @@ export async function fetchPrices(
   city: CityId,
   items: ListItem[],
   pins: Map<string, string> = new Map(),
+  matches: Map<string, string> = new Map(),
 ): Promise<ProviderPricesResponse> {
+  const payload = items.map(({ id, name, quantity }) => {
+    const entry: ListItem = { id, name, quantity };
+    const pin = pins.get(id);
+    const match = matches.get(id);
+    if (pin) entry.pin = pin;
+    if (match) entry.match = match;
+    return entry;
+  });
   const res = await fetch('/api/prices', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ providerId, city, items: items.map(({ id, name, quantity }) => (pins.has(id) ? { id, name, quantity, pin: pins.get(id) } : { id, name, quantity })),
-    }),
+    body: JSON.stringify({ providerId, city, items: payload }),
   });
   const json = (await res.json().catch(() => ({}))) as Partial<ProviderPricesResponse> & { error?: string };
   if (!res.ok) throw new Error(json.error ?? 'No se pudo consultar este supermercado.');

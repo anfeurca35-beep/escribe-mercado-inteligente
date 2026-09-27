@@ -191,7 +191,7 @@ export async function lookupList(
 
   return mapLimit(items, ITEM_CONCURRENCY, async (item) => {
     const base = baseOffer(item, provider, fetchedAt);
-    const query = parseQuery(item.name);
+    const query = parseQuery(item.match ?? item.name);
     const outcome = await searchOnce(searchTermFor(query));
 
     if (outcome.kind === 'unavailable') {

@@ -53,7 +53,17 @@ export function validatePricesRequest(body: unknown): Validation<PricesRequest> 
       }
       pin = r.pin;
     }
-    items.push(pin ? { id: r.id, name, quantity: r.quantity, pin } : { id: r.id, name, quantity: r.quantity });
+    let match: string | undefined;
+    if (r.match !== undefined && r.match !== null) {
+      if (typeof r.match !== 'string') return { ok: false, error: 'Búsqueda de producto inválida.' };
+      const m = r.match.replace(/[\u0000-\u001f]/g, ' ').trim();
+      if (m.length < 2 || m.length > 200) return { ok: false, error: 'Búsqueda de producto inválida.' };
+      match = m;
+    }
+    const entry: ListItem = { id: r.id, name, quantity: r.quantity };
+    if (pin) entry.pin = pin;
+    if (match) entry.match = match;
+    items.push(entry);
   }
   return { ok: true, value: { providerId: b.providerId, city: b.city, items } };
 }

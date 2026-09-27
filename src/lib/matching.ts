@@ -8,6 +8,7 @@ import { KNOWN_BRANDS, STOPWORDS, VARIANT_GROUPS } from './brands';
 import {
   compareCount,
   compareSize,
+  formatSize,
   normalizeText,
   parsePresentation,
   type Comparison,
@@ -275,3 +276,43 @@ export const MATCH_RANK: Record<MatchStatus, number> = {
   EQUIVALENTE: 2,
   NO_ENCONTRADO: 3,
 };
+
+/**
+ * Texto de búsqueda para los DEMÁS supermercados a partir del producto que el
+ * usuario confirmó en uno. Conserva lo que escribió y le agrega lo que
+ * distingue a ese producto (marca, línea, variante, tamaño), para que en los
+ * otros supermercados solo sea EXACTO ese mismo producto. No relaja reglas:
+ * agrega exigencias.
+ */
+export function refineFromProduct(
+  original: string,
+  product: Pick<ProviderProduct, 'name' | 'brand'> & { url?: string | null },
+): string {
+  const q = parseQuery(original);
+  const parts: string[] = [original.trim()];
+  const candNorm = applyPhrases(normalizeText(`${product.name} ${urlVariantWords(product.url).join(' ')}`));
+  const brandNorm = product.brand ? normalizeText(product.brand) : detectBrand(candNorm);
+  const brandIsVariant = !!brandNorm && brandNorm.split(' ').some((w) => VARIANT_TOKENS.has(w));
+
+  if (!q.brand && brandNorm && !brandIsVariant && !compact(q.norm).includes(compact(brandNorm))) {
+    parts.push(brandNorm);
+  }
+
+  const remove = [q.brand, brandIsVariant ? null : brandNorm].filter((b): b is string => !!b);
+  const have = new Set(q.descriptors);
+  const extras = [...new Set(tokenize(candNorm, remove))].filter(
+    (t) => !have.has(t) && !NEUTRAL_WORDS.has(t) && t.length > 1,
+  );
+  parts.push(...extras);
+
+  const pres = parsePresentation(product.name);
+  if (!q.presentation.size && pres.size) parts.push(formatSize(pres.size));
+  if (!q.presentation.count && pres.count && pres.count > 1) parts.push(`x${pres.count}`);
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/** ¿El texto refinado agrega algo a lo que escribió el usuario? */
+export function refinementAddsInfo(original: string, refined: string): boolean {
+  return normalizeText(original) !== normalizeText(refined);
+}

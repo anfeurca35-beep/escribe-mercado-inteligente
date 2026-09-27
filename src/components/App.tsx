@@ -10,16 +10,20 @@ import {
   emptyState,
   listSignature,
   loadState,
+  mergeOffer,
+  refinementFor,
+  type Refinement,
   newId,
   saveState,
   type AppState,
   type ShoppingList,
 } from '@/lib/storage';
-import { pinFor, setSelection, type UserSelection } from '@/lib/selection';
+import { refineFromProduct, refinementAddsInfo } from '@/lib/matching';
+import { pinFor, selectionFor, setSelection, type SelectionMap, type UserSelection } from '@/lib/selection';
 import type { CityId, ProviderId, ProviderInfo, ProviderPricesResponse } from '@/lib/types';
 import { CityPicker } from './CityPicker';
 import { ListEditor } from './ListEditor';
-import { Results, type ProgressState } from './Results';
+import { Results, type CrossSearch, type ProgressState } from './Results';
 import { Logo } from './ui';
 
 type View = { name: 'home' } | { name: 'edit'; listId: string } | { name: 'results'; listId: string };
@@ -63,6 +67,7 @@ export function App() {
   const [progress, setProgress] = useState<Partial<Record<ProviderId, ProgressState>>>({});
   const [busy, setBusy] = useState(false);
   const [storageOk, setStorageOk] = useState(true);
+  const [cross, setCross] = useState<CrossSearch | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -159,7 +164,12 @@ export function App() {
             const pin = pinFor(list.selections, it.id, it.name, p.id);
             if (pin) pins.set(it.id, pin);
           }
-          const response = await fetchPrices(p.id, city, list.items, pins);
+          const matches = new Map<string, string>();
+          for (const it of list.items) {
+            const ref = refinementFor(list, it.id, it.name);
+            if (ref) matches.set(it.id, ref.text);
+          }
+          const response = await fetchPrices(p.id, city, list.items, pins, matches);
           store(response);
           setProgress((pr) => ({ ...pr, [p.id]: { state: 'done' } }));
         } catch (err) {
@@ -173,12 +183,90 @@ export function App() {
   }
 
   function selectProduct(listId: string, itemId: string, providerId: ProviderId, sel: UserSelection | null) {
+    const list = stateRef.current.lists.find((l) => l.id === listId);
+    const item = list?.items.find((i) => i.id === itemId);
+    if (!list || !item) return;
+
+    const selections = setSelection(list.selections, itemId, providerId, sel);
+    const prev = refinementFor(list, itemId, item.name);
+
+    // ¿Cambia la búsqueda para los demás supermercados?
+    let next: Refinement | null = prev;
+    if (sel?.kind === 'producto') {
+      const offer = list.results?.responses.find((r) => r.providerId === providerId)?.offers.find((o) => o.itemId === itemId);
+      const chosen = offer ? [...offer.candidates, ...offer.others].find((c) => c.key === sel.key) : undefined;
+      if (chosen) {
+        const text = refineFromProduct(item.name, chosen.product);
+        next = refinementAddsInfo(item.name, text)
+          ? { itemName: item.name, text, fromProvider: providerId, productName: chosen.product.name }
+          : null;
+      }
+    } else if (prev && prev.fromProvider === providerId) {
+      // Se deshizo o se rechazó la elección que originó la búsqueda refinada.
+      next = null;
+    }
+
     setState((s) => ({
       ...s,
-      lists: s.lists.map((l) =>
-        l.id === listId ? { ...l, selections: setSelection(l.selections, itemId, providerId, sel), updatedAt: new Date().toISOString() } : l,
-      ),
+      lists: s.lists.map((l) => {
+        if (l.id !== listId) return l;
+        const refinements = { ...(l.refinements ?? {}) };
+        if (next) refinements[itemId] = next;
+        else delete refinements[itemId];
+        return { ...l, selections, refinements, updatedAt: new Date().toISOString() };
+      }),
     }));
+
+    const changed = (prev?.text ?? null) !== (next?.text ?? null);
+    const city = state.city ?? list.results?.city;
+    if (changed && city && list.results) void crossSearch(listId, item, next, providerId, selections, city);
+  }
+
+  /** Busca el mismo producto (o vuelve a buscar el original) en los supermercados sin decisión del usuario. */
+  async function crossSearch(
+    listId: string,
+    item: { id: string; name: string; quantity: number },
+    refinement: Refinement | null,
+    sourceProvider: ProviderId,
+    selections: SelectionMap,
+    city: CityId,
+  ) {
+    const targets = providers.filter(
+      (p) =>
+        p.id !== sourceProvider &&
+        p.integration !== 'pendiente' &&
+        (p.cities === 'todas' || p.cities.includes(city)) &&
+        selectionFor(selections, item.id, item.name, p.id) === null,
+    );
+    if (targets.length === 0) return;
+    setCross({
+      listId,
+      itemId: item.id,
+      text: refinement?.text ?? null,
+      fromProvider: sourceProvider,
+      status: Object.fromEntries(targets.map((p) => [p.id, 'loading'])) as CrossSearch['status'],
+    });
+    const matches = new Map<string, string>(refinement ? [[item.id, refinement.text]] : []);
+    await Promise.all(
+      targets.map(async (p) => {
+        let result: 'done' | 'error' = 'done';
+        try {
+          const response = await fetchPrices(p.id, city, [item], new Map(), matches);
+          const offer = response.offers.find((o) => o.itemId === item.id);
+          if (offer) {
+            setState((s) => ({
+              ...s,
+              lists: s.lists.map((l) =>
+                l.id === listId && l.results ? { ...l, results: mergeOffer(l.results, p.id, offer, response.fetchedAt) } : l,
+              ),
+            }));
+          }
+        } catch {
+          result = 'error';
+        }
+        setCross((c) => (c && c.listId === listId && c.itemId === item.id ? { ...c, status: { ...c.status, [p.id]: result } } : c));
+      }),
+    );
   }
 
   function compare(listId: string) {
@@ -314,6 +402,8 @@ export function App() {
             onEdit={() => setView({ name: 'edit', listId: current.id })}
             onChangeCity={() => setPicker({ open: true, thenCompare: current.id })}
             onSelect={(itemId, providerId, sel) => selectProduct(current.id, itemId, providerId, sel)}
+            cross={cross && cross.listId === current.id ? cross : null}
+            onDismissCross={() => setCross(null)}
           />
         </main>
       )}

@@ -25,6 +25,11 @@ export interface ListItem {
   quantity: number;
   /** Clave del producto elegido por el usuario en este proveedor (solo en consultas). */
   pin?: string;
+  /**
+   * Texto para buscar y comparar, cuando es más preciso que `name` (p. ej. tras
+   * confirmar el producto en otro supermercado). Solo en consultas.
+   */
+  match?: string;
 }
 
 /** Producto tal como lo reporta un proveedor. */

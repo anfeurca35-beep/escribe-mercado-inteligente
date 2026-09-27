@@ -4,7 +4,7 @@
 
 import { isCityId } from './location';
 import type { SelectionMap } from './selection';
-import type { CityId, ListItem, ProviderPricesResponse } from './types';
+import type { CityId, ListItem, Offer, ProviderId, ProviderPricesResponse } from './types';
 
 export interface SavedResults {
   city: CityId;
@@ -22,6 +22,40 @@ export interface ShoppingList {
   results: SavedResults | null;
   /** Productos confirmados por el usuario en esta lista (itemId → proveedor → selección). */
   selections?: SelectionMap;
+  /** Búsquedas refinadas a partir de un producto confirmado (itemId → refinamiento). */
+  refinements?: Record<string, Refinement>;
+}
+
+/** Búsqueda más precisa para un ítem, derivada del producto que el usuario confirmó. */
+export interface Refinement {
+  /** Nombre del ítem cuando se creó (si el usuario lo cambia, deja de aplicar). */
+  itemName: string;
+  /** Texto usado para buscar y comparar en los demás supermercados. */
+  text: string;
+  fromProvider: ProviderId;
+  productName: string;
+}
+
+export function refinementFor(list: Pick<ShoppingList, 'refinements'>, itemId: string, itemName: string): Refinement | null {
+  const r = list.refinements?.[itemId];
+  if (!r || r.itemName.trim().toLowerCase() !== itemName.trim().toLowerCase()) return null;
+  return r;
+}
+
+/** Reemplaza la oferta de un ítem en la respuesta de un proveedor. */
+export function mergeOffer(results: SavedResults, providerId: ProviderId, offer: Offer, fetchedAt: string): SavedResults {
+  const responses = [...results.responses];
+  const i = responses.findIndex((r) => r.providerId === providerId);
+  if (i < 0) {
+    responses.push({ providerId, city: results.city, fetchedAt, offers: [offer] });
+  } else {
+    const r = responses[i];
+    const offers = r.offers.some((o) => o.itemId === offer.itemId)
+      ? r.offers.map((o) => (o.itemId === offer.itemId ? offer : o))
+      : [...r.offers, offer];
+    responses[i] = { ...r, offers };
+  }
+  return { ...results, responses };
 }
 
 export interface AppState {

@@ -5,12 +5,22 @@ import { compareList, type ComparisonResult, type ProviderCoverage } from '@/lib
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cityName } from '@/lib/location';
 import { applySelections, selectionFor, type UserSelection } from '@/lib/selection';
-import { listSignature, type ShoppingList } from '@/lib/storage';
+import { listSignature, refinementFor, type ShoppingList } from '@/lib/storage';
 import type { CityId, ListItem, Offer, ProviderId, ProviderInfo } from '@/lib/types';
 import { ProductPicker } from './ProductPicker';
 import { Badge, Legend, Money, OfferBadge, ProviderName } from './ui';
 
 export type ProgressState = { state: 'loading' } | { state: 'done' } | { state: 'error'; message: string };
+
+/** Búsqueda del mismo producto en los demás supermercados tras una confirmación. */
+export interface CrossSearch {
+  listId: string;
+  itemId: string;
+  /** Texto buscado; null = se volvió a buscar lo que escribió el usuario. */
+  text: string | null;
+  fromProvider: ProviderId;
+  status: Partial<Record<ProviderId, 'loading' | 'done' | 'error'>>;
+}
 
 interface Props {
   list: ShoppingList;
@@ -22,6 +32,8 @@ interface Props {
   onEdit: () => void;
   onChangeCity: () => void;
   onSelect: (itemId: string, providerId: ProviderId, sel: UserSelection | null) => void;
+  cross: CrossSearch | null;
+  onDismissCross: () => void;
 }
 
 type OpenPicker = (itemId: string, providerId: ProviderId) => void;
@@ -350,11 +362,15 @@ function ProductDetail({
   offers,
   providers,
   onOpen,
+  refinedText,
+  refinedFrom,
 }: {
   item: ListItem;
   offers: Offer[];
   providers: ProviderInfo[];
   onOpen: OpenPicker;
+  refinedText: string | null;
+  refinedFrom: string | null;
 }) {
   const own = providers.map((p) => ({ p, o: offers.find((x) => x.itemId === item.id && x.providerId === p.id) }));
   return (
@@ -363,6 +379,11 @@ function ProductDetail({
         <strong>{item.name}</strong>
         <span className="num">Cantidad: {item.quantity}</span>
       </header>
+      {refinedText && (
+        <p className="refined small">
+          Se busca en los demás supermercados como <strong>«{refinedText}»</strong>, según tu elección en {refinedFrom}.
+        </p>
+      )}
       {own.map(({ p, o }) =>
         o ? (
           <OfferRow key={p.id} offer={o} providerName={p.name} onOpen={() => onOpen(item.id, p.id)} />
@@ -377,6 +398,82 @@ function ProductDetail({
         ),
       )}
     </article>
+  );
+}
+
+function crossOutcome(o: Offer | undefined): string {
+  if (!o) return 'sin respuesta';
+  if (o.status === 'PROVEEDOR_NO_DISPONIBLE') return 'no disponible';
+  if (o.status === 'NO_ENCONTRADO') return 'no lo encontramos';
+  if (o.selection === 'auto' && o.status === 'OK' && o.product?.price != null) {
+    return `encontrado: ${o.product.name} · $${o.product.price.toLocaleString('es-CO')}${o.eligible ? '' : ' (aparte)'}`;
+  }
+  if (o.selection === 'pendiente') return `${o.candidates.length} ${o.candidates.length === 1 ? 'opción' : 'opciones'} por confirmar`;
+  if (o.equivalents.length > 0) return 'solo productos equivalentes';
+  if (o.status === 'SIN_PRECIO') return 'encontrado, sin precio';
+  return 'no lo encontramos';
+}
+
+function CrossNotice({
+  cross,
+  offers,
+  items,
+  providers,
+  onOpen,
+  onDismiss,
+}: {
+  cross: CrossSearch;
+  offers: Offer[];
+  items: ListItem[];
+  providers: ProviderInfo[];
+  onOpen: OpenPicker;
+  onDismiss: () => void;
+}) {
+  const item = items.find((i) => i.id === cross.itemId);
+  if (!item) return null;
+  const pname = new Map(providers.map((p) => [p.id, p.name]));
+  const entries = Object.entries(cross.status) as Array<[ProviderId, 'loading' | 'done' | 'error']>;
+  const loading = entries.some(([, st]) => st === 'loading');
+  return (
+    <section className="notice cross" style={{ marginTop: 18 }} aria-live="polite">
+      <h2 style={{ fontSize: '1.05rem' }}>
+        {loading ? 'Buscando el mismo producto en los demás supermercados…' : 'Buscamos el mismo producto en los demás supermercados'}
+      </h2>
+      <p className="small" style={{ margin: '4px 0 8px' }}>
+        {cross.text ? (
+          <>
+            Según tu elección en {pname.get(cross.fromProvider)}, buscamos: <strong>«{cross.text}»</strong>
+          </>
+        ) : (
+          <>
+            Volvimos a buscar lo que escribiste: <strong>«{item.name}»</strong>
+          </>
+        )}
+      </p>
+      <ul className="cross-list small">
+        {entries.map(([pid, st]) => {
+          const o = offers.find((x) => x.itemId === cross.itemId && x.providerId === pid);
+          return (
+            <li key={pid}>
+              <ProviderName id={pid} name={pname.get(pid) ?? pid} size="s" />
+              <span>
+                {st === 'loading' ? 'buscando…' : st === 'error' ? 'no se pudo consultar' : crossOutcome(o)}
+              </span>
+              {st === 'done' && o && o.selection === 'pendiente' && (
+                <button className="link-btn" onClick={() => onOpen(cross.itemId, pid)}>
+                  Elegir
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {!loading && (
+        <button className="link-btn small" style={{ marginTop: 8 }} onClick={onDismiss}>
+          Cerrar aviso
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -450,7 +547,19 @@ function AsideSection({ offers, items, providers }: { offers: Offer[]; items: Li
   );
 }
 
-export function Results({ list, providers, city, progress, busy, onRefresh, onEdit, onChangeCity, onSelect }: Props) {
+export function Results({
+  list,
+  providers,
+  city,
+  progress,
+  busy,
+  onRefresh,
+  onEdit,
+  onChangeCity,
+  onSelect,
+  cross,
+  onDismissCross,
+}: Props) {
   const responses = list.results?.responses ?? [];
   const itemNames = useMemo(() => new Map(list.items.map((i) => [i.id, i.name])), [list.items]);
   const offers = useMemo(
@@ -516,6 +625,17 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
         </p>
       )}
 
+      {cross && (
+        <CrossNotice
+          cross={cross}
+          offers={offers}
+          items={list.items}
+          providers={providers}
+          onOpen={openPicker}
+          onDismiss={onDismissCross}
+        />
+      )}
+
       <PendingBanner offers={offers} items={list.items} providers={providers} onOpen={openPicker} />
 
       <section className="section">
@@ -541,7 +661,15 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
         <Legend />
         <div style={{ marginTop: 12 }}>
           {list.items.map((it) => (
-            <ProductDetail key={it.id} item={it} offers={offers} providers={providers} onOpen={openPicker} />
+            <ProductDetail
+              key={it.id}
+              item={it}
+              offers={offers}
+              providers={providers}
+              onOpen={openPicker}
+              refinedText={refinementFor(list, it.id, it.name)?.text ?? null}
+              refinedFrom={nameOf.get(refinementFor(list, it.id, it.name)?.fromProvider ?? 'exito') ?? null}
+            />
           ))}
         </div>
         {!busy && responses.length > 0 && (

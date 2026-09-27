@@ -244,3 +244,86 @@ test('resultados guardados por una versión anterior (sin opciones) se descartan
   const actual = { city: 'medellin' as const, signature: '', responses: [{ providerId: 'exito' as const, city: 'medellin' as const, fetchedAt: '', offers: [base()] }] };
   assert.equal(resultsAreCurrent(actual), true);
 });
+
+// ---------- Buscar el mismo producto en los demás supermercados ----------
+
+test('refinar: la elección agrega línea, marca y tamaño; no relaja reglas', async () => {
+  const { refineFromProduct, refinementAddsInfo, classify } = await import('../src/lib/matching');
+  const premium = refineFromProduct('Arroz Diana 1 kg', { name: 'Arroz DIANA blanco premium (1000  gr)', brand: 'DIANA' });
+  assert.equal(premium, 'Arroz Diana 1 kg premium');
+  const q = parseQuery(premium);
+  assert.equal(classify(q, { name: 'ARROZ DIANA PREMIUM 1000 G', brand: null }).status, 'EXACTO');
+  assert.equal(classify(q, { name: 'ARROZ INTEGRAL DIANA 1.000 G', brand: null }).status, 'EQUIVALENTE');
+  assert.equal(classify(q, { name: 'Arroz Diana blanco vitamor 1000g', brand: null }).status, 'EQUIVALENTE');
+  assert.equal(classify(q, { name: 'Arroz Diana Premium 500 g', brand: null }).status, 'EQUIVALENTE');
+
+  const huevos = refineFromProduct('Huevos AA x30', { name: 'Huevos AA KIKES Rojo Pet (30  und)', brand: 'KIKES' });
+  assert.equal(classify(parseQuery(huevos), { name: 'Huevo Tipo Aa 30 Und', brand: null }).status, 'EQUIVALENTE', 'otra marca');
+  assert.equal(classify(parseQuery(huevos), { name: 'Huevos AA Kikes 30 unidades', brand: null }).status, 'EXACTO');
+
+  const pan = refineFromProduct('Pan tajado Bimbo', { name: 'Pan Tajado Bimbo Blanco Suave (350 Gr)', brand: 'BIMBO' });
+  assert.match(pan, /350 g/, 'agrega el tamaño que no se había escrito');
+
+  const zero = refineFromProduct('Gaseosa Coca-Cola 1.5 L', { name: 'Gaseosa Coca Cola ZERO botella (1500  ml)', brand: 'ZERO' });
+  assert.equal(classify(parseQuery(zero), { name: 'Gaseosa Coca-Cola Original 1.5 L', brand: null }).status, 'PROBABLE');
+  assert.equal(classify(parseQuery(zero), { name: 'Gaseosa Coca-Cola Zero 1.5 L', brand: null }).status, 'EXACTO');
+
+  const descaf = refineFromProduct('Café molido Sello Rojo 250 g', {
+    name: 'Café SELLO ROJO tostado y molido (250  gr)',
+    brand: 'SELLO ROJO',
+    url: 'https://tienda.exito.com/cafe-descafeinado-medio-tostado-y-molido-x-250-gr-661132/p',
+  });
+  assert.match(descaf, /descafeinado/);
+
+  const igual = refineFromProduct('Café molido Sello Rojo 250 g', { name: 'Café SELLO ROJO tostado y molido (250  gr)', brand: 'SELLO ROJO' });
+  assert.equal(refinementAddsInfo('Café molido Sello Rojo 250 g', igual), false, 'nada nuevo: no hace falta buscar de nuevo');
+});
+
+test('refinar: el proveedor compara con la búsqueda refinada y elige solo si hay un único exacto', async () => {
+  setFetcherForTests(async (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/robots.txt') return new Response('', { status: 404 });
+    const sku = (id: string, name: string, price: number) => ({
+      productId: id,
+      productName: name,
+      brand: 'DIANA',
+      linkText: id,
+      items: [{ itemId: id, name, sellers: [{ commertialOffer: { Price: price, AvailableQuantity: 5 } }] }],
+    });
+    return new Response(
+      JSON.stringify([sku('1', 'ARROZ DIANA PREMIUM 1000 G', 5200), sku('2', 'ARROZ INTEGRAL DIANA 1.000 G', 4500), sku('3', 'ARROZ DIANA VITAMOR 1000 G', 4100)]),
+    );
+  });
+  const d1 = buildRegistry().get('d1')!;
+  const [sinRefinar] = await lookupList(d1, [item('a', 'Arroz Diana 1 kg')], 'medellin');
+  assert.equal(sinRefinar.selection, 'pendiente', 'sin la elección, hay duda');
+  const [refinado] = await lookupList(d1, [{ ...item('a', 'Arroz Diana 1 kg'), match: 'Arroz Diana 1 kg premium' }], 'medellin');
+  assert.equal(refinado.selection, 'auto');
+  assert.equal(refinado.product?.price, 5200);
+  assert.equal(refinado.includedInTotals, true);
+});
+
+test('refinar: API acepta y valida la búsqueda refinada', () => {
+  const ok = validatePricesRequest({ providerId: 'd1', city: 'medellin', items: [{ id: 'a', name: 'Arroz', quantity: 1, match: 'Arroz Diana premium' }] });
+  assert.equal(ok.ok, true);
+  if (ok.ok) assert.equal(ok.value.items[0].match, 'Arroz Diana premium');
+  assert.equal(validatePricesRequest({ providerId: 'd1', city: 'medellin', items: [{ id: 'a', name: 'Arroz', quantity: 1, match: 7 }] }).ok, false);
+  assert.equal(
+    validatePricesRequest({ providerId: 'd1', city: 'medellin', items: [{ id: 'a', name: 'Arroz', quantity: 1, match: 'x'.repeat(201) }] }).ok,
+    false,
+  );
+});
+
+test('refinar: la nueva oferta reemplaza solo ese producto en ese supermercado', async () => {
+  const { mergeOffer, refinementFor } = await import('../src/lib/storage');
+  const a = { ...base('a', 'd1'), note: 'viejo' };
+  const b = { ...base('b', 'd1'), note: 'otro' };
+  const results = { city: 'medellin' as const, signature: '', responses: [{ providerId: 'd1' as const, city: 'medellin' as const, fetchedAt: 't', offers: [a, b] }] };
+  const merged = mergeOffer(results, 'd1', { ...a, note: 'nuevo' }, 't2');
+  assert.deepEqual(merged.responses[0].offers.map((o) => o.note), ['nuevo', 'otro']);
+  const added = mergeOffer(results, 'rappi', base('a', 'rappi'), 't2');
+  assert.equal(added.responses.length, 2);
+  const list = { refinements: { a: { itemName: 'Arroz Diana 1 kg', text: 'Arroz Diana 1 kg premium', fromProvider: 'exito' as const, productName: 'x' } } };
+  assert.equal(refinementFor(list, 'a', 'Arroz Diana 1 kg')?.text, 'Arroz Diana 1 kg premium');
+  assert.equal(refinementFor(list, 'a', 'Arroz Roa 1 kg'), null, 'si cambias el nombre, deja de aplicar');
+});

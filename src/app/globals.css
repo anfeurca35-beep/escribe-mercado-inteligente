@@ -987,3 +987,37 @@ table.coverage tr:last-child td {
 .ticket .store h3 .pname {
   font-size: 1.05rem;
 }
+
+/* ---------- búsqueda del mismo producto en otros supermercados ---------- */
+
+.notice.cross {
+  background: var(--plaza-soft);
+  border-color: #b9d4c2;
+}
+
+.cross-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cross-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.cross-list li > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.product .refined {
+  margin: 0;
+  padding: 8px 16px;
+  background: #f1f6f2;
+  border-top: 1px solid var(--line);
+}
