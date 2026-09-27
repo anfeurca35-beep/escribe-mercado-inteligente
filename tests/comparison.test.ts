@@ -100,7 +100,7 @@ test('máximo ahorro: PROBABLES y EQUIVALENTES nunca entran silenciosamente', ()
 });
 
 test('Rappi: precio no confirmado para la ciudad queda aparte y fuera de totales', () => {
-  const rappi = exact('arroz', 'rappi', 1000, { includedInTotals: false, locationConfirmed: false, exclusionReason: 'Bogotá' });
+  const rappi = exact('arroz', 'rappi', 1000, { includedInTotals: false, eligible: false, locationConfirmed: false, exclusionReason: 'Bogotá' });
   const r = compareList(lista, [exact('arroz', 'euro', 4000), rappi], providers);
   assert.equal(r.maxSavings.lines[0].providerId, 'euro', 'Rappi más barato pero excluido');
   assert.equal(r.excludedOffers.length, 1);
@@ -120,7 +120,7 @@ test('aparte: solo exactos excluidos; probables y equivalentes no se listan como
     [
       offerWith('arroz', 'exito', { match: 'PROBABLE', includedInTotals: false }),
       offerWith('leche', 'd1', { match: 'EQUIVALENTE', includedInTotals: false }),
-      exact('cafe', 'rappi', 9000, { includedInTotals: false, exclusionReason: 'marketplace' }),
+      exact('cafe', 'rappi', 9000, { includedInTotals: false, eligible: false, exclusionReason: 'marketplace' }),
     ],
     providers,
   );

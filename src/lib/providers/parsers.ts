@@ -63,6 +63,15 @@ function brandFromName(name: string): string | null {
   return b ? b.toUpperCase() : null;
 }
 
+/** Acepta solo URLs https de imagen; cualquier otra cosa es null. */
+export function httpsUrl(v: unknown): string | null {
+  if (typeof v === 'object' && v !== null && 'url' in v) v = (v as { url: unknown }).url;
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (t.startsWith('//')) return `https:${t}`;
+  return /^https:\/\/[^\s"'<>]+$/.test(t) && t.length < 600 ? t : null;
+}
+
 // ---------- VTEX (Éxito, Euro y otros) ----------
 
 interface VtexOffer {
@@ -81,6 +90,7 @@ interface VtexItem {
   name?: unknown;
   nameComplete?: unknown;
   sellers?: VtexSeller[];
+  images?: Array<{ imageUrl?: unknown }>;
 }
 interface VtexProduct {
   productId?: unknown;
@@ -155,6 +165,7 @@ export function parseVtexSearch(json: unknown, baseUrl: string): ProviderProduct
         available: best.available,
         url,
         seller: best.seller,
+        image: httpsUrl(Array.isArray(item.images) ? item.images[0]?.imageUrl : null),
       });
     }
   }
@@ -214,6 +225,7 @@ export function parseJsonLdProducts(html: string, baseUrl: string): ProviderProd
         available,
         url,
         seller: null,
+        image: httpsUrl(Array.isArray(o.image) ? o.image[0] : o.image),
       });
     }
   }
@@ -357,6 +369,7 @@ export function extractEmbeddedProducts(data: unknown, baseUrl: string, limit = 
           available,
           url,
           seller: storeHere,
+          image: httpsUrl(o.image ?? o.image_url ?? o.imageUrl ?? o.photo),
         });
       }
     }

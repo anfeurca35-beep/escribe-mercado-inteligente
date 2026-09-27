@@ -52,7 +52,7 @@ test('proveedor VTEX real: exacto, equivalente y promoción', async () => {
   assert.equal(o.product?.price, 4936);
   assert.equal(o.product?.listPrice, 6700);
   assert.equal(o.includedInTotals, true);
-  assert.deepEqual(o.equivalents.map((e) => e.name), ['Arroz Roa x 1000 gr']);
+  assert.deepEqual(o.equivalents.map((e) => e.product.name), ['Arroz Roa x 1000 gr']);
 });
 
 test('proveedor no disponible: 403 no se evade y no inventa precio', async () => {

@@ -15,6 +15,7 @@ import {
   type AppState,
   type ShoppingList,
 } from '@/lib/storage';
+import { pinFor, setSelection, type UserSelection } from '@/lib/selection';
 import type { CityId, ProviderId, ProviderInfo, ProviderPricesResponse } from '@/lib/types';
 import { CityPicker } from './CityPicker';
 import { ListEditor } from './ListEditor';
@@ -38,7 +39,11 @@ function unavailableResponse(providerId: ProviderId, city: CityId, list: Shoppin
       match: 'NO_ENCONTRADO',
       matchReasons: [],
       product: null,
+      candidates: [],
       equivalents: [],
+      others: [],
+      selection: 'no_aplica',
+      eligible: false,
       locationConfirmed: false,
       includedInTotals: false,
       exclusionReason: null,
@@ -136,7 +141,12 @@ export function App() {
     await Promise.all(
       providers.map(async (p) => {
         try {
-          const response = await fetchPrices(p.id, city, list.items);
+          const pins = new Map<string, string>();
+          for (const it of list.items) {
+            const pin = pinFor(list.selections, it.id, it.name, p.id);
+            if (pin) pins.set(it.id, pin);
+          }
+          const response = await fetchPrices(p.id, city, list.items, pins);
           store(response);
           setProgress((pr) => ({ ...pr, [p.id]: { state: 'done' } }));
         } catch (err) {
@@ -147,6 +157,15 @@ export function App() {
       }),
     );
     setBusy(false);
+  }
+
+  function selectProduct(listId: string, itemId: string, providerId: ProviderId, sel: UserSelection | null) {
+    setState((s) => ({
+      ...s,
+      lists: s.lists.map((l) =>
+        l.id === listId ? { ...l, selections: setSelection(l.selections, itemId, providerId, sel), updatedAt: new Date().toISOString() } : l,
+      ),
+    }));
   }
 
   function compare(listId: string) {
@@ -281,6 +300,7 @@ export function App() {
             onRefresh={() => compare(current.id)}
             onEdit={() => setView({ name: 'edit', listId: current.id })}
             onChangeCity={() => setPicker({ open: true, thenCompare: current.id })}
+            onSelect={(itemId, providerId, sel) => selectProduct(current.id, itemId, providerId, sel)}
           />
         </main>
       )}

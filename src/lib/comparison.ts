@@ -1,18 +1,22 @@
 // Comparación centralizada. Funciones puras, sin red.
 //
 // Reglas:
-// - Totales y recomendaciones usan SOLO ofertas EXACTAS con precio verificado
-//   e incluidas en totales (ciudad y costos confirmados).
-// - "Comprar todo en un solo lugar" solo aparece con 100 % de cobertura exacta.
+// - Totales y recomendaciones usan SOLO ofertas utilizables: EXACTAS elegidas
+//   automáticamente (un único exacto) o productos CONFIRMADOS por el usuario,
+//   con precio verificado e incluidas en totales (ciudad y costos confirmados).
+// - Probables sin confirmar y equivalentes nunca entran en totales.
+// - "Comprar todo en un solo lugar" solo aparece con 100 % de cobertura utilizable.
 // - Todas las sumas multiplican por la cantidad solicitada.
 
 import type { ListItem, Offer, ProviderId, ProviderInfo } from './types';
 
+/** ¿La oferta puede entrar en totales? (exacto automático o confirmado por el usuario). */
 export function isUsableExact(offer: Offer): boolean {
+  const decided = (offer.match === 'EXACTO' && offer.selection === 'auto') || offer.selection === 'usuario';
   return (
+    decided &&
     offer.includedInTotals &&
     offer.status === 'OK' &&
-    offer.match === 'EXACTO' &&
     offer.product !== null &&
     typeof offer.product.price === 'number' &&
     Number.isFinite(offer.product.price) &&
@@ -27,7 +31,14 @@ export interface ProviderCoverage {
   requested: number;
   /** Productos localizados (exacto, probable o equivalente), con o sin precio. */
   found: number;
+  /** Exactos elegidos automáticamente, utilizables en totales. */
   exact: number;
+  /** Productos confirmados por el usuario, utilizables en totales. */
+  confirmed: number;
+  /** Ofertas que esperan confirmación del usuario. */
+  toConfirm: number;
+  /** El usuario indicó que ninguna opción corresponde. */
+  rejected: number;
   probable: number;
   equivalent: number;
   noPrice: number;
@@ -36,7 +47,9 @@ export interface ProviderCoverage {
   pending: number;
   /** Exactos con precio que no entran en totales (ciudad o costos sin confirmar). */
   excluded: number;
-  /** Suma de precio × cantidad de los exactos utilizables. */
+  /** Exactos + confirmados: lo que cuenta para cobertura y totales. */
+  usable: number;
+  /** Suma de precio × cantidad de los productos utilizables. */
   exactSubtotal: number;
   coveragePct: number;
   /** Aún no hay respuesta de este proveedor. */
@@ -54,6 +67,7 @@ export interface PlanLine {
   listPrice: number | null;
   lineTotal: number;
   url: string | null;
+  confirmedByUser: boolean;
 }
 
 export interface SavingsComparison {
@@ -112,6 +126,10 @@ export function compareList(
       requested,
       found: 0,
       exact: 0,
+      confirmed: 0,
+      toConfirm: 0,
+      rejected: 0,
+      usable: 0,
       probable: 0,
       equivalent: 0,
       noPrice: 0,
@@ -140,37 +158,48 @@ export function compareList(
           continue;
         case 'OK':
           c.found++;
-          if (o.match === 'EXACTO') {
-            if (isUsableExact(o)) {
-              c.exact++;
-              c.exactSubtotal += (o.product?.price ?? 0) * (qtyOf.get(o.itemId) ?? 1);
-            } else {
-              c.excluded++;
-            }
+          if (o.selection === 'rechazado') {
+            c.rejected++;
+          } else if (isUsableExact(o)) {
+            if (o.selection === 'usuario') c.confirmed++;
+            else c.exact++;
+            c.exactSubtotal += (o.product?.price ?? 0) * (qtyOf.get(o.itemId) ?? 1);
+          } else if (!o.eligible && (o.selection === 'usuario' || (o.match === 'EXACTO' && o.selection === 'auto'))) {
+            c.excluded++;
+          } else if (o.selection === 'pendiente') {
+            c.toConfirm++;
+            if (o.match === 'PROBABLE') c.probable++;
           } else if (o.match === 'PROBABLE') c.probable++;
           else if (o.match === 'EQUIVALENTE') c.equivalent++;
           else c.notFound++;
       }
     }
-    c.coveragePct = requested > 0 ? Math.round((c.exact / requested) * 1000) / 10 : 0;
+    c.usable = c.exact + c.confirmed;
+    c.coveragePct = requested > 0 ? Math.round((c.usable / requested) * 1000) / 10 : 0;
     return c;
   });
 
   const singleStoreOptions: SingleStoreOption[] = coverage
-    .filter((c) => requested > 0 && c.exact === requested)
+    .filter((c) => requested > 0 && c.usable === requested)
     .map((c) => ({ providerId: c.providerId, name: c.name, total: c.exactSubtotal }))
     .sort((a, b) => a.total - b.total);
 
-  const withExact = coverage.filter((c) => c.exact > 0);
+  const withExact = coverage.filter((c) => c.usable > 0);
   const bestCoverage =
     withExact.length === 0
       ? null
-      : [...withExact].sort((a, b) => b.exact - a.exact || a.exactSubtotal - b.exactSubtotal)[0];
+      : [...withExact].sort((a, b) => b.usable - a.usable || a.exactSubtotal - b.exactSubtotal)[0];
 
   const maxSavings = buildMaxSavings(items, relevant, providers);
 
   const excludedOffers = relevant.filter(
-    (o) => !o.includedInTotals && o.match === 'EXACTO' && o.product !== null && o.product.price !== null && o.status === 'OK',
+    (o) =>
+      !o.includedInTotals &&
+      !o.eligible &&
+      (o.selection === 'usuario' || (o.match === 'EXACTO' && o.selection === 'auto')) &&
+      o.product !== null &&
+      o.product.price !== null &&
+      o.status === 'OK',
   );
 
   return { requested, coverage, singleStoreOptions, bestCoverage, maxSavings, excludedOffers };
@@ -201,6 +230,7 @@ function buildMaxSavings(items: ListItem[], offers: Offer[], providers: Provider
       listPrice: best.product?.listPrice ?? null,
       lineTotal: unitPrice * item.quantity,
       url: best.product?.url ?? null,
+      confirmedByUser: best.selection === 'usuario',
     });
   }
 

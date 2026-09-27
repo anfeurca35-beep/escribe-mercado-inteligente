@@ -28,6 +28,8 @@ export interface SupermarketProvider {
   search(term: string, ctx: SearchContext): Promise<SearchOutcome>;
   /** Opcional: completa un producto sin precio leyendo su página. */
   enrich?(product: ProviderProduct): Promise<ProviderProduct>;
+  /** Opcional: trae un producto concreto por su identificador (selección del usuario). */
+  fetchByKey?(key: string): Promise<ProviderProduct | null>;
 }
 
 function tryJson(body: string): unknown | undefined {
@@ -71,8 +73,8 @@ export function createVtexProvider(cfg: VtexConfig): SupermarketProvider {
     async search(term, ctx) {
       const q = encodeURIComponent(term);
       const endpoints = [
-        `${baseUrl}/api/catalog_system/pub/products/search?ft=${q}&_from=0&_to=19`,
-        `${baseUrl}/api/io/_v/api/intelligent-search/product_search/?query=${q}&count=20&page=1&locale=es-CO`,
+        `${baseUrl}/api/catalog_system/pub/products/search?ft=${q}&_from=0&_to=39`,
+        `${baseUrl}/api/io/_v/api/intelligent-search/product_search/?query=${q}&count=40&page=1&locale=es-CO`,
       ];
       let lastError: string | null = null;
       let answeredEmpty = false;
@@ -99,6 +101,20 @@ export function createVtexProvider(cfg: VtexConfig): SupermarketProvider {
       }
       if (answeredEmpty) return { kind: 'ok', products: [], confirmedCity: ctx.city };
       return { kind: 'unavailable', reason: lastError ?? 'No se pudo consultar el proveedor.' };
+    },
+    async fetchByKey(key) {
+      // Solo identificadores numéricos de SKU (VTEX).
+      if (!/^\d{1,15}$/.test(key)) return null;
+      try {
+        const res = await politeFetchText(`${baseUrl}/api/catalog_system/pub/products/search?fq=skuId:${key}`, {
+          accept: 'application/json',
+        });
+        const json = res.status >= 200 && res.status < 300 ? tryJson(res.body) : undefined;
+        if (json === undefined) return null;
+        return parseVtexSearch(json, baseUrl).find((p) => p.externalId === key) ?? null;
+      } catch {
+        return null;
+      }
     },
     enrich: cfg.productPageParser
       ? async (product) => {

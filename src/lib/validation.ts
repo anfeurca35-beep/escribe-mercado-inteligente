@@ -46,7 +46,14 @@ export function validatePricesRequest(body: unknown): Validation<PricesRequest> 
     if (typeof r.quantity !== 'number' || !Number.isInteger(r.quantity) || r.quantity < 1 || r.quantity > LIMITS.maxQty) {
       return { ok: false, error: `La cantidad debe ser un entero entre 1 y ${LIMITS.maxQty}.` };
     }
-    items.push({ id: r.id, name, quantity: r.quantity });
+    let pin: string | undefined;
+    if (r.pin !== undefined && r.pin !== null) {
+      if (typeof r.pin !== 'string' || r.pin.length === 0 || r.pin.length > 300 || /[\u0000-\u001f]/.test(r.pin)) {
+        return { ok: false, error: 'Selección de producto inválida.' };
+      }
+      pin = r.pin;
+    }
+    items.push(pin ? { id: r.id, name, quantity: r.quantity, pin } : { id: r.id, name, quantity: r.quantity });
   }
   return { ok: true, value: { providerId: b.providerId, city: b.city, items } };
 }

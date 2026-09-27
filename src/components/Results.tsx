@@ -1,11 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { compareList, type ComparisonResult, type ProviderCoverage } from '@/lib/comparison';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import { cityName } from '@/lib/location';
+import { applySelections, selectionFor, type UserSelection } from '@/lib/selection';
 import { listSignature, type ShoppingList } from '@/lib/storage';
 import type { CityId, ListItem, Offer, ProviderId, ProviderInfo } from '@/lib/types';
+import { ProductPicker } from './ProductPicker';
 import { Badge, Legend, Money, OfferBadge } from './ui';
 
 export type ProgressState = { state: 'loading' } | { state: 'done' } | { state: 'error'; message: string };
@@ -19,7 +21,10 @@ interface Props {
   onRefresh: () => void;
   onEdit: () => void;
   onChangeCity: () => void;
+  onSelect: (itemId: string, providerId: ProviderId, sel: UserSelection | null) => void;
 }
+
+type OpenPicker = (itemId: string, providerId: ProviderId) => void;
 
 function pct(n: number): string {
   return `${n.toLocaleString('es-CO', { maximumFractionDigits: 1 })} %`;
@@ -37,7 +42,7 @@ function Recommendation({ c, requested }: { c: ComparisonResult; requested: numb
           <Money value={single.total} />
         </p>
         <p className="muted small" style={{ margin: '4px 0 0' }}>
-          {requested} de {requested} productos exactos, con las cantidades de tu lista.
+          {requested} de {requested} productos exactos o confirmados por ti, con las cantidades de tu lista.
         </p>
         {c.singleStoreOptions.length > 1 && (
           <ul className="small" style={{ margin: '10px 0 0', paddingLeft: 18 }}>
@@ -60,17 +65,17 @@ function Recommendation({ c, requested }: { c: ComparisonResult; requested: numb
       {b ? (
         <>
           <p style={{ margin: '12px 0 0' }}>
-            <strong>Mejor cobertura:</strong> {b.name} — {b.exact}/{b.requested} productos ({pct(b.coveragePct)})
+            <strong>Mejor cobertura:</strong> {b.name} — {b.usable}/{b.requested} productos ({pct(b.coveragePct)})
           </p>
           <p className="muted small" style={{ margin: '2px 0 0' }}>
-            Esos {b.exact} productos exactos suman <Money value={b.exactSubtotal} />.
+            Esos {b.usable} productos (exactos o confirmados) suman <Money value={b.exactSubtotal} />.
           </p>
           <CountList c={b} />
         </>
       ) : (
         <p className="muted" style={{ margin: '10px 0 0' }}>
-          Todavía no hay productos exactos confirmados con precio. Revisa abajo los probables y equivalentes, o escribe marca y tamaño en la
-          lista.
+          Todavía no hay productos exactos o confirmados con precio. Confirma abajo los productos pendientes, o escribe marca y tamaño en
+          la lista.
         </p>
       )}
     </div>
@@ -86,13 +91,16 @@ function CountList({ c }: { c: ProviderCoverage }) {
         <Badge tone="exacto">Exactos: {c.exact}</Badge>
       </li>
       <li>
-        <Badge tone="probable">Probables: {c.probable}</Badge>
+        <Badge tone="exacto">Confirmados por ti: {c.confirmed}</Badge>
+      </li>
+      <li>
+        <Badge tone="probable">Por confirmar: {c.toConfirm}</Badge>
       </li>
       <li>
         <Badge tone="equivalente">Equivalentes: {c.equivalent}</Badge>
       </li>
       <li>Sin precio: {c.noPrice}</li>
-      <li>No encontrados: {c.notFound}</li>
+      <li>No encontrados: {c.notFound + c.rejected}</li>
     </ul>
   );
 }
@@ -102,7 +110,7 @@ function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }
   if (plan.itemsCovered === 0) {
     return (
       <p className="notice muted">
-        Aún no se puede calcular: ningún producto tiene un precio exacto confirmado en un supermercado.
+        Aún no se puede calcular: ningún producto tiene un precio exacto o confirmado por ti en un supermercado.
       </p>
     );
   }
@@ -130,6 +138,7 @@ function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }
                   <Money value={l.lineTotal} />
                 </span>
                 <span className="detail">
+                  {l.confirmedByUser ? '✓ Confirmado por ti · ' : ''}
                   {l.productName} · {l.listPrice ? <span className="strike num">{`$${l.listPrice.toLocaleString('es-CO')}`}</span> : null}
                   <Money value={l.unitPrice} /> c/u
                 </span>
@@ -177,7 +186,8 @@ function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }
       )}
       {plan.missing.length > 0 && (
         <div className="notice warn small" style={{ marginTop: 10 }}>
-          <strong>Sin precio exacto confirmado ({plan.missing.length}):</strong> no están incluidos en el total.
+          <strong>Sin precio exacto o confirmado ({plan.missing.length}):</strong> no están incluidos en el total. Si alguno aparece
+          como «por confirmar», elige el producto correcto abajo.
           <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
             {plan.missing.map((i) => (
               <li key={i.id}>
@@ -202,7 +212,8 @@ function CoverageTable({ coverage, providers }: { coverage: ProviderCoverage[]; 
             <th scope="col">Cobertura</th>
             <th scope="col">Encontrados</th>
             <th scope="col">Exactos</th>
-            <th scope="col">Probables</th>
+            <th scope="col">Confirmados</th>
+            <th scope="col">Por confirmar</th>
             <th scope="col">Equivalentes</th>
             <th scope="col">Sin precio</th>
             <th scope="col">No encontrados</th>
@@ -231,20 +242,21 @@ function CoverageTable({ coverage, providers }: { coverage: ProviderCoverage[]; 
                   </span>
                 </th>
                 {pending ? (
-                  <td colSpan={8} className="muted" style={{ textAlign: 'left' }}>
+                  <td colSpan={9} className="muted" style={{ textAlign: 'left' }}>
                     Sin datos: {p?.pendingReason ?? 'pendiente de integración.'}
                   </td>
                 ) : (
                   <>
                     <td>
-                      {c.exact}/{c.requested} ({pct(c.coveragePct)})
+                      {c.usable}/{c.requested} ({pct(c.coveragePct)})
                     </td>
                     <td>{c.found}</td>
                     <td>{c.exact}</td>
-                    <td>{c.probable}</td>
+                    <td>{c.confirmed}</td>
+                    <td>{c.toConfirm}</td>
                     <td>{c.equivalent}</td>
                     <td>{c.noPrice}</td>
-                    <td>{c.notFound}</td>
+                    <td>{c.notFound + c.rejected}</td>
                     <td>{c.unavailable}</td>
                   </>
                 )}
@@ -257,17 +269,45 @@ function CoverageTable({ coverage, providers }: { coverage: ProviderCoverage[]; 
   );
 }
 
-function OfferRow({ offer, providerName }: { offer: Offer; providerName: string }) {
-  const p = offer.product;
-  const showPrice = offer.status === 'OK' && p?.price != null;
-  const aside = offer.status === 'OK' && !offer.includedInTotals && offer.match === 'EXACTO';
+function OfferActions({ offer, onOpen }: { offer: Offer; onOpen: () => void }) {
+  const total = offer.candidates.length + offer.others.length;
+  if (offer.status === 'PENDIENTE_INTEGRACION' || offer.status === 'PROVEEDOR_NO_DISPONIBLE') return null;
+  let label: string | null = null;
+  let primary = false;
+  if (offer.selection === 'pendiente') {
+    label = offer.candidates.length > 1 ? `Elegir producto (${offer.candidates.length} opciones)` : 'Confirmar producto';
+    primary = true;
+  } else if (offer.selection === 'usuario' || offer.selection === 'rechazado' || offer.selection === 'auto') {
+    label = 'Cambiar';
+  } else if (offer.others.length > 0) {
+    label = `Ver otras opciones (${offer.others.length})`;
+  } else if (offer.equivalents.length > 0) {
+    label = `Ver alternativas (${offer.equivalents.length})`;
+  }
+  if (!label || (label === 'Cambiar' && total === 0 && offer.selection === 'auto')) return null;
   return (
-    <div className={`offer-row${aside ? ' aside' : ''}`}>
+    <span className="offer-actions">
+      <button className={primary ? 'btn' : 'link-btn'} onClick={onOpen}>
+        {label}
+      </button>
+    </span>
+  );
+}
+
+function OfferRow({ offer, providerName, onOpen }: { offer: Offer; providerName: string; onOpen: () => void }) {
+  const p = offer.product;
+  const decided = offer.selection === 'auto' || offer.selection === 'usuario';
+  const showPrice = offer.status === 'OK' && p?.price != null && offer.selection !== 'rechazado';
+  const aside = offer.status === 'OK' && decided && !offer.includedInTotals && !offer.eligible;
+  const pending = offer.selection === 'pendiente';
+  return (
+    <div className={`offer-row${aside ? ' aside' : ''}${pending ? ' pending' : ''}`}>
       <span className="prov">{providerName}</span>
       <div className="body">
         <OfferBadge offer={offer} />
-        {p && (
+        {p && offer.selection !== 'rechazado' && (
           <span className="found small">
+            {pending ? 'Sugerido: ' : ''}
             {p.url ? (
               <a href={p.url} target="_blank" rel="noopener noreferrer">
                 {p.name}
@@ -294,37 +334,37 @@ function OfferRow({ offer, providerName }: { offer: Offer; providerName: string 
         <span className="reasons">
           {aside && <strong>No se suma en totales. </strong>}
           {aside ? offer.exclusionReason : null}
-          {!aside && offer.status === 'OK' ? offer.matchReasons.join(' ') : null}
-          {offer.status !== 'OK' ? offer.note : null}
+          {!aside && offer.status === 'OK' && offer.selection !== 'rechazado' ? offer.matchReasons.join(' ') : null}
+          {offer.status !== 'OK' || offer.selection === 'rechazado' ? offer.note : null}
+          {pending && offer.status === 'OK' ? ' No se suma hasta que lo confirmes.' : null}
         </span>
       )}
-      {offer.equivalents.length > 0 && (
-        <details>
-          <summary>Equivalentes ({offer.equivalents.length}) — no se suman</summary>
-          <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
-            {offer.equivalents.map((e, i) => (
-              <li key={`${e.name}-${i}`}>
-                {e.name}: {e.price != null && e.available !== false ? <Money value={e.price} /> : 'sin precio'}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <OfferActions offer={offer} onOpen={onOpen} />
     </div>
   );
 }
 
-function ProductDetail({ item, offers, providers }: { item: ListItem; offers: Offer[]; providers: ProviderInfo[] }) {
+function ProductDetail({
+  item,
+  offers,
+  providers,
+  onOpen,
+}: {
+  item: ListItem;
+  offers: Offer[];
+  providers: ProviderInfo[];
+  onOpen: OpenPicker;
+}) {
   const own = providers.map((p) => ({ p, o: offers.find((x) => x.itemId === item.id && x.providerId === p.id) }));
   return (
-    <article className="product">
+    <article className="product" id={`item-${item.id}`}>
       <header>
         <strong>{item.name}</strong>
         <span className="num">Cantidad: {item.quantity}</span>
       </header>
       {own.map(({ p, o }) =>
         o ? (
-          <OfferRow key={p.id} offer={o} providerName={p.name} />
+          <OfferRow key={p.id} offer={o} providerName={p.name} onOpen={() => onOpen(item.id, p.id)} />
         ) : (
           <div className="offer-row" key={p.id}>
             <span className="prov">{p.name}</span>
@@ -334,6 +374,41 @@ function ProductDetail({ item, offers, providers }: { item: ListItem; offers: Of
         ),
       )}
     </article>
+  );
+}
+
+function PendingBanner({
+  offers,
+  items,
+  providers,
+  onOpen,
+}: {
+  offers: Offer[];
+  items: ListItem[];
+  providers: ProviderInfo[];
+  onOpen: OpenPicker;
+}) {
+  const pending = offers.filter((o) => o.selection === 'pendiente');
+  if (pending.length === 0) return null;
+  const names = new Map(items.map((i) => [i.id, i.name]));
+  const pname = new Map(providers.map((p) => [p.id, p.name]));
+  return (
+    <section className="notice warn" style={{ marginTop: 18 }} aria-live="polite">
+      <h2 style={{ fontSize: '1.1rem' }}>
+        {pending.length === 1 ? '1 producto necesita tu confirmación' : `${pending.length} productos necesitan tu confirmación`}
+      </h2>
+      <p className="small" style={{ margin: '6px 0 10px' }}>
+        El sistema encontró opciones parecidas, pero no puede asegurar que sean lo que buscas. Confírmalas para que entren en la
+        comparación.
+      </p>
+      <div className="pending-list">
+        {pending.map((o) => (
+          <button key={`${o.itemId}-${o.providerId}`} className="btn secondary" onClick={() => onOpen(o.itemId, o.providerId)}>
+            {names.get(o.itemId)} · {pname.get(o.providerId)}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -372,9 +447,15 @@ function AsideSection({ offers, items, providers }: { offers: Offer[]; items: Li
   );
 }
 
-export function Results({ list, providers, city, progress, busy, onRefresh, onEdit, onChangeCity }: Props) {
+export function Results({ list, providers, city, progress, busy, onRefresh, onEdit, onChangeCity, onSelect }: Props) {
   const responses = list.results?.responses ?? [];
-  const offers = useMemo(() => responses.flatMap((r) => r.offers), [responses]);
+  const itemNames = useMemo(() => new Map(list.items.map((i) => [i.id, i.name])), [list.items]);
+  const offers = useMemo(
+    () => applySelections(responses.flatMap((r) => r.offers), list.selections, itemNames),
+    [responses, list.selections, itemNames],
+  );
+  const [picking, setPicking] = useState<{ itemId: string; providerId: ProviderId } | null>(null);
+  const openPicker: OpenPicker = (itemId, providerId) => setPicking({ itemId, providerId });
   const answered = useMemo(() => new Set(responses.map((r) => r.providerId)), [responses]);
   const comparison = useMemo(() => compareList(list.items, offers, providers, answered), [list.items, offers, providers, answered]);
 
@@ -432,6 +513,8 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
         </p>
       )}
 
+      <PendingBanner offers={offers} items={list.items} providers={providers} onOpen={openPicker} />
+
       <section className="section">
         <h2>Recomendación</h2>
         <Recommendation c={comparison} requested={list.items.length} />
@@ -455,16 +538,37 @@ export function Results({ list, providers, city, progress, busy, onRefresh, onEd
         <Legend />
         <div style={{ marginTop: 12 }}>
           {list.items.map((it) => (
-            <ProductDetail key={it.id} item={it} offers={offers} providers={providers} />
+            <ProductDetail key={it.id} item={it} offers={offers} providers={providers} onOpen={openPicker} />
           ))}
         </div>
         {!busy && responses.length > 0 && (
           <p className="muted small">
-            Precios leídos de las páginas públicas de cada supermercado. {nameOf.get('rappi') ?? 'Rappi'} y los productos probables o
-            equivalentes nunca se suman en los totales.
+            Precios leídos de las páginas públicas de cada supermercado. {nameOf.get('rappi') ?? 'Rappi'}, los productos por confirmar y
+            los equivalentes nunca se suman en los totales.
           </p>
         )}
       </section>
+
+      {picking &&
+        (() => {
+          const offer = offers.find((o) => o.itemId === picking.itemId && o.providerId === picking.providerId);
+          const itemName = itemNames.get(picking.itemId);
+          if (!offer || itemName === undefined) return null;
+          const sel = selectionFor(list.selections, picking.itemId, itemName, picking.providerId);
+          return (
+            <ProductPicker
+              itemName={itemName}
+              providerName={nameOf.get(picking.providerId) ?? picking.providerId}
+              offer={offer}
+              selectedKey={sel?.kind === 'producto' ? sel.key : null}
+              onPick={(s) => {
+                onSelect(picking.itemId, picking.providerId, s);
+                setPicking(null);
+              }}
+              onClose={() => setPicking(null)}
+            />
+          );
+        })()}
     </>
   );
 }

@@ -8,6 +8,7 @@ Principio central: **datos reales, matching honesto, cálculos correctos y recom
 - Crear listas con cantidades, pegar una lista escrita o importarla desde una foto (opcional, requiere `ANTHROPIC_API_KEY`).
 - Consultar bajo demanda solo los productos de la lista en Éxito, D1, Euro y Rappi.
 - Clasificar cada coincidencia como **Exacto**, **Probable**, **Equivalente** o **No encontrado**.
+- Selección y confirmación: un único exacto se elige solo; si hay varios candidatos o solo probables, el usuario elige entre 3–5 opciones (foto, nombre, marca, presentación, precio) o marca «Ninguno corresponde». La elección se guarda por lista en el dispositivo y se puede cambiar. Los equivalentes se muestran como alternativas y nunca se eligen solos.
 - Recomendar "comprar todo en un lugar" **solo** con 100 % de cobertura exacta; si no, mostrar la mejor cobertura real.
 - Calcular el **máximo ahorro** repartiendo la compra, solo con exactos, multiplicando por cantidad.
 - Ubicación: "Usar mi ubicación" o selección manual. Solo se guarda la ciudad.

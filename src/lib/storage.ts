@@ -3,6 +3,7 @@
 // No se guardan coordenadas ni fotos.
 
 import { isCityId } from './location';
+import type { SelectionMap } from './selection';
 import type { CityId, ListItem, ProviderPricesResponse } from './types';
 
 export interface SavedResults {
@@ -19,6 +20,8 @@ export interface ShoppingList {
   createdAt: string;
   updatedAt: string;
   results: SavedResults | null;
+  /** Productos confirmados por el usuario en esta lista (itemId → proveedor → selección). */
+  selections?: SelectionMap;
 }
 
 export interface AppState {
