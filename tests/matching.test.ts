@@ -57,3 +57,29 @@ test('matching: el término de búsqueda no incluye tamaños', () => {
   assert.equal(searchTermFor(parseQuery('Arroz Diana 1000 g')), 'arroz diana');
   assert.equal(searchTermFor(parseQuery('Leche entera Alquería 1 L')), 'leche alqueria entera');
 });
+
+// Casos reales observados en producción (27-sep-2026).
+test('producción: combos nunca son EXACTO (Protex x3 + desodorante)', () => {
+  assert.notEqual(m('Jabón Protex x3', 'Combo Jabon Protex Men x3+Desodorante Speed Stick Spray x2', 'PROTEX'), 'EXACTO');
+});
+
+test('producción: la marca debe estar en el nombre, no solo en metadatos (Bonaropa vs Xtra Tech)', () => {
+  assert.notEqual(
+    m('Detergente Bonaropa 3000 g', 'Detergente Oxígeno Xtra Tech 3000 Gr Detergente 0XÍGENO Antibacterial 3000 Gr', 'BONAROPA'),
+    'EXACTO',
+  );
+});
+
+test('producción: otra línea del mismo producto es PROBABLE (Diana cosecha especial, Ariel revitacolor)', () => {
+  assert.equal(m('Arroz Diana 1000 g', 'Arroz DIANA cosecha especial (1000  gr)', 'DIANA'), 'PROBABLE');
+  assert.equal(m('Detergente Ariel polvo 1 kg', 'Detergente en polvo ARIEL revitacolor (1000  gr)', 'ARIEL'), 'PROBABLE');
+  assert.equal(m('Papel higiénico Familia x12', 'Papel higiénico FAMILIA delux ultrasuave x12 rollos (355  mts)', 'FAMILIA'), 'PROBABLE');
+});
+
+test('producción: palabras de empaque o genéricas no impiden EXACTO', () => {
+  assert.equal(m('Gaseosa Coca-Cola 1.5 L', 'Gaseosa COCA COLA original (1500  ml)', 'COCA COLA'), 'EXACTO');
+  assert.equal(m('Café molido Sello Rojo 250 g', 'Café SELLO ROJO tostado y molido (250  gr)', 'SELLO ROJO'), 'EXACTO');
+  assert.equal(m('Salsa de tomate Fruco 400 g', 'Salsa de tomate FRUCO doy pack (400  gr)', 'FRUCO'), 'EXACTO');
+  assert.equal(m('Huevos AA x30', 'Huevo Tipo Aa 30 Und', null), 'EXACTO');
+  assert.equal(m('Arroz Diana 1000 g', 'Arroz Diana 1.000g', null), 'EXACTO');
+});

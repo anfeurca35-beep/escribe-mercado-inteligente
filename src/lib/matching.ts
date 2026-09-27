@@ -27,6 +27,13 @@ const PHRASES: Array<[RegExp, string]> = [
 ];
 
 const VARIANT_TOKENS = new Set(Object.values(VARIANT_GROUPS).flat());
+
+/** Palabras que no cambian qué producto es (empaque, términos genéricos). */
+const NEUTRAL_WORDS = new Set([
+  'original', 'clasico', 'clasica', 'tradicional', 'regular', 'tostado', 'doy', 'doypack', 'pack', 'caja', 'pet',
+  'tetra', 'tetrapak', 'bolsa', 'botella', 'mts', 'metro', 'metros', 'mt', 'tipo', 'sabor', 'blanco', 'rojo', 'marron',
+  'grande', 'familiar', 'unidade', 'mega', 'rollo', 'rollos', 'hoja', 'hojas', 'dental', 'tajado', 'nacional',
+].map((w) => w));
 const BRANDS_BY_LENGTH = [...new Set(KNOWN_BRANDS)].sort((a, b) => b.length - a.length);
 
 // Elimina expresiones de tamaño y conteo del texto normalizado para no
@@ -159,8 +166,13 @@ export function classify(query: ParsedQuery, product: Pick<ProviderProduct, 'nam
       if (variantGroupsOf(c).some((g) => groups.includes(g))) conflicts.push(`${q} ≠ ${c}`);
     }
   }
-  // Variantes presentes en el producto que el usuario no pidió.
-  const extras = [...candTokens].filter((t) => VARIANT_TOKENS.has(t) && !descriptors.includes(t));
+  // Características del producto que el usuario no pidió (línea, fórmula, variante).
+  // Solo se ignoran palabras neutras de empaque o de uso general.
+  const extras = [...candTokens].filter((t) => !descriptors.includes(t) && !NEUTRAL_WORDS.has(t) && t.length > 1);
+  // Combos y kits nunca son el mismo producto.
+  const isCombo = /\+|\bcombo\b|\bkit\b|\bpague\b|\blleve\b/.test(normalizeText(product.name).replace(/\+/g, ' + '));
+  // La marca pedida debe aparecer en el nombre, no solo en los metadatos del proveedor.
+  const brandInName = !query.brand || compact(normalizeText(product.name)).includes(compact(query.brand));
 
   const reasons: string[] = [];
   const result = (status: MatchStatus): MatchResult => ({ status, reasons });
@@ -205,9 +217,17 @@ export function classify(query: ParsedQuery, product: Pick<ProviderProduct, 'nam
     probable = true;
     reasons.push(`No se pudo verificar: ${missing.join(', ')}.`);
   }
+  if (isCombo) {
+    probable = true;
+    reasons.push('Es un combo o paquete con otros productos.');
+  }
+  if (!brandInName) {
+    probable = true;
+    reasons.push(`La marca ${query.brand} no aparece en el nombre del producto.`);
+  }
   if (extras.length > 0) {
     probable = true;
-    reasons.push(`El producto indica una variante que no pediste: ${extras.join(', ')}.`);
+    reasons.push(`El producto tiene características que no pediste: ${extras.slice(0, 5).join(', ')}.`);
   }
   if (!query.presentation.size && !query.presentation.count) {
     probable = true;
