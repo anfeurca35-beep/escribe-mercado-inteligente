@@ -316,3 +316,34 @@ export function refineFromProduct(
 export function refinementAddsInfo(original: string, refined: string): boolean {
   return normalizeText(original) !== normalizeText(refined);
 }
+
+/**
+ * Texto de búsqueda que describe un producto concreto (su nombre, marca y
+ * variante), sin palabras de empaque que no cambian qué producto es. Se usa
+ * cuando el usuario elige algo distinto a lo que escribió (otra marca o
+ * tamaño): ese producto pasa a ser el que se busca en los demás supermercados.
+ */
+export function productAsQuery(product: Pick<ProviderProduct, 'name' | 'brand'> & { url?: string | null }): string {
+  const nameNorm = normalizeText(product.name.replace(/[()]/g, ' '));
+  const words = nameNorm.split(' ').filter((w) => w && !NEUTRAL_WORDS.has(w) && !NEUTRAL_WORDS.has(stem(w)));
+  const parts = [words.join(' ')];
+  const brandNorm = product.brand ? normalizeText(product.brand) : null;
+  const brandIsVariant = !!brandNorm && brandNorm.split(' ').some((w) => VARIANT_TOKENS.has(w));
+  if (brandNorm && !brandIsVariant && !compact(nameNorm).includes(compact(brandNorm))) parts.push(brandNorm);
+  const slug = urlVariantWords(product.url).filter((w) => !` ${nameNorm} `.includes(` ${w} `));
+  parts.push(...slug);
+  return parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/**
+ * Qué buscar en los demás supermercados a partir de la opción que eligió el
+ * usuario: si coincide con lo que escribió, se precisa lo escrito; si es otra
+ * marca, tamaño o variante, se busca ese producto.
+ */
+export function targetFromChoice(
+  original: string,
+  product: Pick<ProviderProduct, 'name' | 'brand'> & { url?: string | null },
+  match: MatchStatus,
+): string {
+  return match === 'EXACTO' || match === 'PROBABLE' ? refineFromProduct(original, product) : productAsQuery(product);
+}

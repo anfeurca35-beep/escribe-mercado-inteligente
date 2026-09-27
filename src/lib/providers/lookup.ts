@@ -142,8 +142,9 @@ export function buildOffer(
 
   // El producto elegido por el usuario siempre se conserva entre las opciones.
   const pinned = pin ? classified.find((c) => c.key === pin) : undefined;
-  if (pinned && !offer.candidates.includes(pinned) && !offer.others.includes(pinned)) {
+  if (pinned && !offer.candidates.includes(pinned) && !offer.equivalents.includes(pinned) && !offer.others.includes(pinned)) {
     if (pinned.match === 'EXACTO' || pinned.match === 'PROBABLE') offer.candidates.push(pinned);
+    else if (pinned.match === 'EQUIVALENTE') offer.equivalents.push(pinned);
     else offer.others.push(pinned);
   }
 

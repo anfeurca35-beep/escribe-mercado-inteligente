@@ -123,11 +123,12 @@ test('confirmación: "Ninguno corresponde" excluye la oferta', () => {
   assert.equal(c.usable, 0);
 });
 
-test('confirmación: un equivalente no se puede seleccionar como el mismo producto', () => {
+test('confirmación: un equivalente elegido por el usuario queda marcado como otro producto', () => {
   const o = offerFor('Leche entera Alquería 1 L', [p('Leche Entera Colanta 1000 ml', 3990, 'x', 'COLANTA')]);
   const r = applySelection(o, { kind: 'producto', key: 'x', itemName: 'Leche entera Alquería 1 L' });
-  assert.notEqual(r.selection, 'usuario');
-  assert.equal(r.includedInTotals, false);
+  assert.equal(r.selection, 'usuario');
+  assert.equal(r.match, 'EQUIVALENTE', 'no se presenta como el mismo producto');
+  assert.match(r.matchReasons.join(' '), /otra marca/);
 });
 
 test('confirmación: se puede elegir una de las "otras opciones" descartadas', () => {
@@ -382,4 +383,41 @@ test('dos productos distintos con el mismo nombre (distinta dirección) no se ju
   ]);
   assert.equal(o.candidates.length, 2);
   assert.equal(o.selection, 'pendiente');
+});
+
+// ---------- El usuario puede elegir cualquier opción, también otra marca o tamaño ----------
+
+test('elegir alternativa: una opción de otra marca se puede seleccionar y entra en la comparación', () => {
+  const o = offerFor('Leche entera Alquería 1 L', [p('Leche Entera Colanta 1000 ml', 3990, 'col', 'COLANTA')]);
+  assert.equal(o.selection, 'no_aplica', 'el sistema nunca la elige solo');
+  assert.equal(o.includedInTotals, false);
+  const r = applySelection(o, { kind: 'producto', key: 'col', itemName: 'Leche entera Alquería 1 L' });
+  assert.equal(r.selection, 'usuario');
+  assert.equal(r.includedInTotals, true);
+  assert.equal(r.product?.price, 3990);
+  assert.match(r.matchReasons.join(' '), /distinto a lo que escribiste/);
+  const c = compareList([item('arroz', 'Leche entera Alquería 1 L', 2)], [r], providers);
+  assert.equal(c.maxSavings.total, 3990 * 2);
+});
+
+test('elegir alternativa: en los demás supermercados se busca ese producto, no lo escrito', async () => {
+  const { targetFromChoice, classify } = await import('../src/lib/matching');
+  const t = targetFromChoice('Leche entera Alquería 1 L', { name: 'Leche Entera Colanta 1000 ml', brand: 'COLANTA' }, 'EQUIVALENTE');
+  assert.equal(t, 'leche entera colanta 1000 ml');
+  const q = parseQuery(t);
+  assert.equal(classify(q, { name: 'LECHE ENTERA COLANTA X 1000 ML', brand: null }).status, 'EXACTO');
+  assert.equal(classify(q, { name: 'Leche Entera Alqueria 1000 ml', brand: null }).status, 'EQUIVALENTE');
+  assert.equal(classify(q, { name: 'Leche Colanta Deslactosada 1000 ml', brand: null }).status, 'EQUIVALENTE');
+  // Elegir algo que coincide con lo escrito sigue precisando lo escrito.
+  assert.equal(
+    targetFromChoice('Arroz Diana 1 kg', { name: 'Arroz DIANA blanco premium (1000  gr)', brand: 'DIANA' }, 'PROBABLE'),
+    'Arroz Diana 1 kg premium',
+  );
+});
+
+test('elegir alternativa: el producto elegido se conserva aunque haya más de 5 alternativas', () => {
+  const muchas = Array.from({ length: 8 }, (_, i) => p(`Leche Entera Marca${i} 1000 ml`, 3000 + i, `m${i}`, `MARCA${i}`));
+  const o = buildOffer(base(), parseQuery('Leche entera Alquería 1 L'), muchas, true, null, 'm7');
+  assert.ok(o.equivalents.some((c) => c.key === 'm7'));
+  assert.equal(applySelection(o, { kind: 'producto', key: 'm7', itemName: 'Leche entera Alquería 1 L' }).selection, 'usuario');
 });

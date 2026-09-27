@@ -33,7 +33,7 @@ const MATCH_TONE = { EXACTO: 'exacto', PROBABLE: 'probable', EQUIVALENTE: 'equiv
 const MATCH_TEXT = {
   EXACTO: 'Exacto',
   PROBABLE: 'Probable',
-  EQUIVALENTE: 'Equivalente (otro producto)',
+  EQUIVALENTE: 'Otra marca, tamaño o variante',
   NO_ENCONTRADO: 'Descartado por el sistema',
 } as const;
 
@@ -42,12 +42,15 @@ function CandidateCard({
   providerName,
   selectable,
   selected,
+  autoChosen = false,
   onSelect,
 }: {
   c: Candidate;
   providerName: string;
   selectable: boolean;
   selected: boolean;
+  /** Elegido por el sistema (no por el usuario): se muestra con botón para confirmarlo. */
+  autoChosen?: boolean;
   onSelect: () => void;
 }) {
   const p = c.product;
@@ -55,7 +58,7 @@ function CandidateCard({
   const priced = p.price !== null && p.price > 0 && p.available !== false;
   const presentation = presentationOf(p.name);
   return (
-    <li className={`cand${selected ? ' selected' : ''}`}>
+    <li className={`cand${selected || autoChosen ? ' selected' : ''}`}>
       <div className="cand-img">
         {p.image && !imgFailed ? (
           // Foto publicada por el supermercado.
@@ -91,11 +94,14 @@ function CandidateCard({
         {c.reasons.length > 0 && <span className="muted small">{c.reasons.join(' ')}</span>}
         {selectable &&
           (selected ? (
-            <span className="badge exacto">Seleccionado</span>
+            <span className="badge exacto">Tu elección</span>
           ) : (
-            <button className="btn secondary" onClick={onSelect}>
-              Seleccionar este producto
-            </button>
+            <>
+              {autoChosen && <span className="badge exacto">Elegido automáticamente</span>}
+              <button className={autoChosen ? 'btn' : 'btn secondary'} onClick={onSelect}>
+                {autoChosen ? 'Confirmar este producto' : 'Seleccionar este producto'}
+              </button>
+            </>
           ))}
         {p.url && (
           <a className="small" href={p.url} target="_blank" rel="noopener noreferrer">
@@ -128,11 +134,12 @@ export function ProductPicker({ itemName, providerId, providerName, offer, selec
               ? 'Encontramos varias opciones. Selecciona la correcta.'
               : hasCandidates
                 ? 'Confirma si este es el producto.'
-                : 'No hubo una coincidencia confiable.'}
+                : 'No encontramos exactamente lo que escribiste. Elige una opción parecida.'}
         </h2>
         {!nothing && (
           <p className="muted small">
-            Solo los productos que tú confirmes, o los exactos sin ninguna duda, se suman en la comparación.
+            Elige el que más se acomode, aunque sea de otra marca o tamaño. Lo usaremos en la comparación y buscaremos ese mismo
+            producto en los demás supermercados.
           </p>
         )}
 
@@ -144,7 +151,10 @@ export function ProductPicker({ itemName, providerId, providerName, offer, selec
                 c={c}
                 providerName={providerName}
                 selectable
-                selected={selectedKey === c.key || (!userDecided && offer.selection === 'auto' && offer.product !== null && productKey(offer.product) === c.key)}
+                selected={selectedKey === c.key}
+                autoChosen={
+                  !userDecided && offer.selection === 'auto' && offer.product !== null && productKey(offer.product) === c.key
+                }
                 onSelect={() => pick(c)}
               />
             ))}
@@ -176,16 +186,24 @@ export function ProductPicker({ itemName, providerId, providerName, offer, selec
           ))}
 
         {offer.equivalents.length > 0 && (
-          <details style={{ marginTop: 14 }} open={!hasCandidates && offer.others.length === 0}>
-            <summary>
-              <strong>Alternativas: otro producto ({offer.equivalents.length})</strong> — no se suman como el mismo producto
-            </summary>
+          <>
+            <h3 style={{ marginTop: 18 }}>Otras marcas, tamaños o variantes ({offer.equivalents.length})</h3>
+            <p className="muted small">
+              No son exactamente lo que escribiste. Si prefieres uno de estos, selecciónalo: pasará a ser tu producto.
+            </p>
             <ul className="cand-list">
               {offer.equivalents.map((c) => (
-                <CandidateCard key={c.key} c={c} providerName={providerName} selectable={false} selected={false} onSelect={() => {}} />
+                <CandidateCard
+                  key={c.key}
+                  c={c}
+                  providerName={providerName}
+                  selectable
+                  selected={selectedKey === c.key}
+                  onSelect={() => pick(c)}
+                />
               ))}
             </ul>
-          </details>
+          </>
         )}
 
         <div className="picker-actions">

@@ -34,7 +34,13 @@ export function OfferBadge({ offer }: { offer: Offer }) {
       return <Badge tone="gris">{`${m.label} · sin precio`}</Badge>;
     }
     case 'OK': {
-      if (offer.selection === 'usuario') return <Badge tone="exacto">Confirmado por ti</Badge>;
+      if (offer.selection === 'usuario') {
+        return (
+          <Badge tone="exacto">
+            {offer.match === 'EXACTO' || offer.match === 'PROBABLE' ? 'Confirmado por ti' : 'Elegido por ti · otro producto'}
+          </Badge>
+        );
+      }
       if (offer.selection === 'rechazado') return <Badge tone="gris">Ninguno corresponde</Badge>;
       if (offer.selection === 'pendiente') return <Badge tone="probable">Por confirmar</Badge>;
       const m = MATCH_LABEL[offer.match];
@@ -48,7 +54,7 @@ export function Legend() {
     <div className="legend small">
       <Badge tone="exacto">Exacto o confirmado por ti: se suma en la comparación</Badge>
       <Badge tone="probable">Por confirmar: elige el producto correcto</Badge>
-      <Badge tone="equivalente">Equivalente: otro producto que podría servir</Badge>
+      <Badge tone="equivalente">Otra marca o tamaño: puedes elegirlo si te sirve</Badge>
       <Badge tone="no">No encontrado</Badge>
       <Badge tone="gris">Sin precio, no disponible o pendiente</Badge>
     </div>

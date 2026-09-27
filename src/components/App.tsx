@@ -18,7 +18,7 @@ import {
   type AppState,
   type ShoppingList,
 } from '@/lib/storage';
-import { refineFromProduct, refinementAddsInfo } from '@/lib/matching';
+import { refinementAddsInfo, targetFromChoice } from '@/lib/matching';
 import { pinFor, selectionFor, setSelection, type SelectionMap, type UserSelection } from '@/lib/selection';
 import type { CityId, ProviderId, ProviderInfo, ProviderPricesResponse } from '@/lib/types';
 import { CityPicker } from './CityPicker';
@@ -259,9 +259,11 @@ export function App() {
     let next: Refinement | null = prev;
     if (sel?.kind === 'producto') {
       const offer = list.results?.responses.find((r) => r.providerId === providerId)?.offers.find((o) => o.itemId === itemId);
-      const chosen = offer ? [...offer.candidates, ...offer.others].find((c) => c.key === sel.key) : undefined;
+      const chosen = offer
+        ? [...offer.candidates, ...offer.equivalents, ...offer.others].find((c) => c.key === sel.key)
+        : undefined;
       if (chosen) {
-        const text = refineFromProduct(item.name, chosen.product);
+        const text = targetFromChoice(item.name, chosen.product, chosen.match);
         next = refinementAddsInfo(item.name, text)
           ? { itemName: item.name, text, fromProvider: providerId, productName: chosen.product.name }
           : null;

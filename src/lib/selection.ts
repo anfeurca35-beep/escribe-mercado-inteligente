@@ -41,7 +41,10 @@ export function applySelection(offer: Offer, sel: UserSelection | null): Offer {
       note: 'Indicaste que ninguna opción corresponde.',
     };
   }
-  const chosen = [...offer.candidates, ...offer.others].find((c) => c.key === sel.key);
+  // El usuario puede elegir cualquier opción: coincidencias, alternativas (otra
+  // marca/tamaño) u otras opciones descartadas. El sistema nunca elige una
+  // alternativa por su cuenta; aquí la eligió el usuario.
+  const chosen = [...offer.candidates, ...offer.equivalents, ...offer.others].find((c) => c.key === sel.key);
   if (!chosen) {
     return {
       ...offer,
@@ -55,7 +58,10 @@ export function applySelection(offer: Offer, sel: UserSelection | null): Offer {
     ...offer,
     product: chosen.product,
     match: chosen.match,
-    matchReasons: ['Confirmado por ti.'],
+    matchReasons:
+      chosen.match === 'EXACTO' || chosen.match === 'PROBABLE'
+        ? ['Confirmado por ti.']
+        : ['Elegido por ti: es distinto a lo que escribiste (otra marca, tamaño o variante).'],
     status: usable ? 'OK' : 'SIN_PRECIO',
     selection: 'usuario',
     includedInTotals: usable && offer.eligible,

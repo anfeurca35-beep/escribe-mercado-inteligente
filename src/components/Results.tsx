@@ -293,10 +293,8 @@ function OfferActions({ offer, onOpen }: { offer: Offer; onOpen: () => void }) {
     primary = true;
   } else if (offer.selection === 'usuario' || offer.selection === 'rechazado' || offer.selection === 'auto') {
     label = 'Cambiar';
-  } else if (offer.others.length > 0) {
-    label = `Ver otras opciones (${offer.others.length})`;
-  } else if (offer.equivalents.length > 0) {
-    label = `Ver alternativas (${offer.equivalents.length})`;
+  } else if (offer.equivalents.length + offer.others.length > 0) {
+    label = `Elegir otra opción (${offer.equivalents.length + offer.others.length})`;
   }
   if (!label || (label === 'Cambiar' && total === 0 && offer.selection === 'auto')) return null;
   return (
