@@ -83,3 +83,22 @@ test('producción: palabras de empaque o genéricas no impiden EXACTO', () => {
   assert.equal(m('Huevos AA x30', 'Huevo Tipo Aa 30 Und', null), 'EXACTO');
   assert.equal(m('Arroz Diana 1000 g', 'Arroz Diana 1.000g', null), 'EXACTO');
 });
+
+// Casos reales observados en producción tras agregar la selección (27-sep-2026).
+test('producción: marca "ZERO" reportada por el proveedor no borra la variante (Coca-Cola Zero)', () => {
+  assert.equal(m('Gaseosa Coca-Cola 1.5 L', 'Gaseosa Coca Cola ZERO botella (1500  ml)', 'ZERO'), 'PROBABLE');
+  assert.equal(m('Gaseosa Coca-Cola 1.5 L', 'Gaseosa COCA COLA original (1500  ml)', 'COCA COLA'), 'EXACTO');
+});
+
+test('producción: variante oculta en la dirección del producto (café descafeinado con el mismo nombre)', () => {
+  const q = parseQuery('Café molido Sello Rojo 250 g');
+  const name = 'Café SELLO ROJO tostado y molido (250  gr)';
+  const normal = classify(q, { name, brand: 'SELLO ROJO', url: 'https://tienda.exito.com/cafe-molido-34895/p' });
+  const descaf = classify(q, {
+    name,
+    brand: 'SELLO ROJO',
+    url: 'https://tienda.exito.com/cafe-descafeinado-medio-tostado-y-molido-x-250-gr-661132/p',
+  });
+  assert.equal(normal.status, 'EXACTO');
+  assert.notEqual(descaf.status, 'EXACTO');
+});

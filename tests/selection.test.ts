@@ -213,3 +213,25 @@ test('API: acepta un producto fijado válido y rechaza uno inválido', () => {
   const bad = validatePricesRequest({ providerId: 'exito', city: 'medellin', items: [{ id: 'a', name: 'Arroz', quantity: 1, pin: 5 }] });
   assert.equal(bad.ok, false);
 });
+
+test('producción: con la variante leída de la dirección, el café normal vuelve a elegirse solo', () => {
+  const name = 'Café SELLO ROJO tostado y molido (250  gr)';
+  const o = offerFor('Café molido Sello Rojo 250 g', [
+    product(name, 13900, { externalId: '523968', brand: 'SELLO ROJO', url: 'https://tienda.exito.com/cafe-molido-34895/p' }),
+    product(name, 22000, {
+      externalId: '666452',
+      brand: 'SELLO ROJO',
+      url: 'https://tienda.exito.com/cafe-descafeinado-medio-tostado-y-molido-x-250-gr-661132/p',
+    }),
+  ]);
+  assert.equal(o.selection, 'auto');
+  assert.equal(o.product?.price, 13900);
+});
+
+test('producción: productos realmente distintos siguen pidiendo confirmación (Fruco doypack vs botella)', () => {
+  const o = offerFor('Salsa de tomate Fruco 400 g', [
+    p('Salsa de tomate FRUCO doy pack (400  gr)', 8350, 'a', 'FRUCO'),
+    p('Salsa de tomate FRUCO botella (400  gr)', 15200, 'b', 'FRUCO'),
+  ]);
+  assert.equal(o.selection, 'pendiente');
+});

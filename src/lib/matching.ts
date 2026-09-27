@@ -135,12 +135,39 @@ function variantGroupsOf(token: string): string[] {
     .map(([group]) => group);
 }
 
-export function classify(query: ParsedQuery, product: Pick<ProviderProduct, 'name' | 'brand'>): MatchResult {
-  const candNorm = applyPhrases(normalizeText(`${product.name} ${product.brand ?? ''}`));
+/**
+ * Palabras de variante que aparecen en la dirección del producto pero no en su
+ * nombre visible (p. ej. un café "descafeinado" que el sitio muestra con el
+ * mismo nombre que el normal).
+ */
+export function urlVariantWords(url: string | null | undefined): string[] {
+  if (!url) return [];
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return [];
+  }
+  const slug = path.split('/').filter((x) => x && x !== 'p').pop() ?? '';
+  return normalizeText(slug.replace(/-/g, ' '))
+    .split(' ')
+    .filter((w) => VARIANT_TOKENS.has(w));
+}
+
+export function classify(
+  query: ParsedQuery,
+  product: Pick<ProviderProduct, 'name' | 'brand'> & { url?: string | null },
+): MatchResult {
+  const slugWords = urlVariantWords(product.url).join(' ');
+  const candNorm = applyPhrases(normalizeText(`${product.name} ${product.brand ?? ''} ${slugWords}`));
   const candBrandNorm = product.brand ? normalizeText(product.brand) : detectBrand(candNorm);
   const brand = brandState(query, candNorm, candBrandNorm);
 
-  const removeFromCandidate = [query.brand, candBrandNorm].filter((b): b is string => !!b);
+  // La marca que reporta el proveedor se quita del texto, salvo que sea una
+  // palabra de variante (p. ej. marca "ZERO" en una Coca-Cola Zero).
+  const candBrandRemovable =
+    candBrandNorm && !candBrandNorm.split(' ').some((w) => VARIANT_TOKENS.has(w)) ? candBrandNorm : null;
+  const removeFromCandidate = [query.brand, candBrandRemovable].filter((b): b is string => !!b);
   const candTokens = new Set(tokenize(candNorm, removeFromCandidate));
   const candPresentation = parsePresentation(product.name);
 
