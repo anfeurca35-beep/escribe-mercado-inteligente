@@ -58,6 +58,23 @@ function Recommendation({ c, requested }: { c: ComparisonResult; requested: numb
         <p className="muted small" style={{ margin: '4px 0 0' }}>
           {requested} de {requested} productos exactos o confirmados por ti, con las cantidades de tu lista.
         </p>
+        {c.maxSavings.itemsCovered === requested && c.maxSavings.total < single.total && (
+          <p className="small" style={{ margin: '8px 0 0' }}>
+            <strong>
+              Repartiendo la compra pagas <Money value={c.maxSavings.total} /> y ahorras{' '}
+              <Money value={single.total - c.maxSavings.total} />
+            </strong>{' '}
+            (ver «Máximo ahorro»).
+          </p>
+        )}
+        {c.singleStoreOptions.length > 1 && c.singleStoreOptions[1].total > single.total && (
+          <p className="small" style={{ margin: '8px 0 0' }}>
+            <strong>
+              Ahorras <Money value={c.singleStoreOptions[1].total - single.total} />
+            </strong>{' '}
+            frente a comprar todo en {c.singleStoreOptions[1].name}.
+          </p>
+        )}
         {c.singleStoreOptions.length > 1 && (
           <ul className="small" style={{ margin: '10px 0 0', paddingLeft: 18 }}>
             {c.singleStoreOptions.slice(1).map((o) => (
@@ -119,6 +136,57 @@ function CountList({ c }: { c: ProviderCoverage }) {
   );
 }
 
+function SavingsBlock({ c }: { c: ComparisonResult }) {
+  const plan = c.maxSavings;
+  const s = plan.savings;
+  const ref = s.reference;
+  const scope = ref && !ref.coversWholePlan ? `esos ${ref.itemsCompared} de ${plan.lines.length} productos` : 'todo';
+  return (
+    <div className="savings" aria-live="polite">
+      <p className="savings-label">¿Cuánto ahorras?</p>
+      {ref && s.bySplitting > 0 ? (
+        <>
+          <p className="savings-big num">
+            <Money value={s.bySplitting} />
+            <span className="savings-pct"> ({pct(s.bySplittingPct)})</span>
+          </p>
+          <p className="savings-vs">
+            frente a comprar {scope} en <ProviderName id={ref.providerId} name={ref.name} size="s" />, que costaría{' '}
+            <strong className="num">
+              <Money value={ref.providerCost} />
+            </strong>
+            {ref.coversWholePlan ? '' : ' (no tiene los demás)'}.
+          </p>
+        </>
+      ) : ref ? (
+        <p className="savings-vs">
+          Comprar {scope} en <ProviderName id={ref.providerId} name={ref.name} size="s" /> cuesta lo mismo (
+          <Money value={ref.providerCost} />
+          ): para estos productos no hay ahorro por repartir la compra.
+        </p>
+      ) : (
+        <p className="savings-vs">
+          Ningún otro supermercado tiene estos mismos productos con precio confirmado, así que todavía no hay con qué comparar.
+        </p>
+      )}
+
+      {s.byPromotions > 0 && (
+        <p className="savings-promo">
+          <strong>
+            Promociones: <Money value={s.byPromotions} />
+          </strong>{' '}
+          menos que el precio normal (<Money value={s.regularTotal} />
+          ). Ya están incluidas en el total; no se suman al ahorro de arriba.
+        </p>
+      )}
+
+      <p className="savings-note">
+        Con las cantidades de tu lista y solo con productos exactos o confirmados por ti. No incluye domicilios.
+      </p>
+    </div>
+  );
+}
+
 function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }) {
   const plan = c.maxSavings;
   if (plan.itemsCovered === 0) {
@@ -168,31 +236,24 @@ function MaxSavings({ c, requested }: { c: ComparisonResult; requested: number }
         </div>
       </div>
 
-      {complete.length > 0 && (
-        <ul className="small" style={{ paddingLeft: 18 }}>
-          {complete.map((x) => (
-            <li key={x.providerId}>
-              Frente a comprar esos mismos {x.itemsCompared} productos solo en {x.name} (<Money value={x.providerCost} />):{' '}
-              {x.savings > 0 ? (
-                <strong>
-                  ahorras <Money value={x.savings} />
-                </strong>
-              ) : (
-                'mismo precio'
-              )}
-              .
-            </li>
-          ))}
-        </ul>
-      )}
-      {partial.length > 0 && (
-        <details className="small">
-          <summary>Comparación con supermercados que tienen solo parte de estos productos</summary>
+      <SavingsBlock c={c} />
+
+      {(complete.length > 0 || partial.length > 0) && (
+        <details className="small" style={{ marginTop: 10 }}>
+          <summary>Ver el ahorro frente a cada supermercado</summary>
           <ul style={{ paddingLeft: 18 }}>
-            {partial.map((x) => (
+            {[...complete, ...partial].map((x) => (
               <li key={x.providerId}>
-                {x.name} tiene {x.itemsCompared} de estos productos: <Money value={x.providerCost} /> frente a <Money value={x.planCost} /> en el
-                plan ({x.savings > 0 ? <>ahorras <Money value={x.savings} /></> : 'sin diferencia'}).
+                {x.coversWholePlan ? `Todo en ${x.name}` : `${x.name} (tiene ${x.itemsCompared} de estos productos)`}:{' '}
+                <Money value={x.providerCost} /> frente a <Money value={x.planCost} /> en el plan —{' '}
+                {x.savings > 0 ? (
+                  <strong>
+                    ahorras <Money value={x.savings} />
+                  </strong>
+                ) : (
+                  'sin diferencia'
+                )}
+                .
               </li>
             ))}
           </ul>

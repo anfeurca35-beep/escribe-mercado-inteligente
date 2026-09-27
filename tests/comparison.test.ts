@@ -126,3 +126,55 @@ test('aparte: solo exactos excluidos; probables y equivalentes no se listan como
   );
   assert.deepEqual(r.excludedOffers.map((o) => o.providerId), ['rappi']);
 });
+
+// ---------- Cuánto ahorras ----------
+
+test('ahorro: frente al supermercado único más barato que tiene todo, con cantidades', () => {
+  // Plan: arroz en Éxito (3900×2), leche en Euro (4200×3), café en Éxito (10000).
+  // Solo Éxito: 7800 + 13500 + 10000 = 31300. Solo Euro: 8000 + 12600 + 11000 = 31600.
+  const r = compareList(
+    lista,
+    [
+      exact('arroz', 'exito', 3900), exact('leche', 'exito', 4500), exact('cafe', 'exito', 10000),
+      exact('arroz', 'euro', 4000), exact('leche', 'euro', 4200), exact('cafe', 'euro', 11000),
+    ],
+    providers,
+  );
+  const s = r.maxSavings.savings;
+  assert.equal(r.maxSavings.total, 7800 + 12600 + 10000);
+  assert.equal(s.reference?.providerId, 'exito', 'se compara con el más barato de los que tienen todo (conservador)');
+  assert.equal(s.bySplitting, 31300 - 30400);
+  assert.equal(s.bySplittingPct, Math.round((900 / 31300) * 1000) / 10);
+});
+
+test('ahorro: si todo sale de un supermercado, se compara con otro, no consigo mismo', () => {
+  const r = compareList(lista, [exact('arroz', 'd1', 3000), exact('leche', 'd1', 3000), exact('cafe', 'd1', 9000), exact('arroz', 'exito', 3900), exact('leche', 'exito', 4500), exact('cafe', 'exito', 10000)], providers);
+  const s = r.maxSavings.savings;
+  assert.equal(s.reference?.providerId, 'exito');
+  assert.equal(s.bySplitting, 7800 + 13500 + 10000 - (6000 + 9000 + 9000));
+});
+
+test('ahorro: si ningún supermercado tiene todo, se compara con el que tiene más y lo indica', () => {
+  const r = compareList(lista, [exact('arroz', 'exito', 3900), exact('leche', 'euro', 4200), exact('arroz', 'euro', 4100), exact('cafe', 'd1', 9000)], providers);
+  const s = r.maxSavings.savings;
+  assert.equal(s.reference?.providerId, 'euro');
+  assert.equal(s.reference?.coversWholePlan, false);
+  assert.equal(s.reference?.itemsCompared, 2);
+  assert.equal(s.bySplitting, 4100 * 2 - 3900 * 2);
+});
+
+test('ahorro: promociones frente al precio normal, multiplicadas por cantidad', () => {
+  const promo = exact('arroz', 'exito', 4936);
+  promo.product = { ...promo.product!, listPrice: 6700 };
+  const r = compareList(lista, [promo, exact('leche', 'exito', 4200)], providers);
+  const s = r.maxSavings.savings;
+  assert.equal(s.byPromotions, (6700 - 4936) * 2);
+  assert.equal(s.regularTotal, 6700 * 2 + 4200 * 3);
+});
+
+test('ahorro: sin otro supermercado con qué comparar, no se inventa ahorro', () => {
+  const r = compareList(lista, [exact('arroz', 'exito', 3900)], providers);
+  const s = r.maxSavings.savings;
+  assert.equal(s.reference, null);
+  assert.equal(s.bySplitting, 0);
+});

@@ -80,6 +80,24 @@ export interface SavingsComparison {
   savings: number;
 }
 
+export interface SavingsSummary {
+  /**
+   * Referencia para "cuánto ahorras": el supermercado único con el que se
+   * compara (el más barato entre los que tienen todos los productos del plan;
+   * si ninguno los tiene todos, el que tiene más). null si no hay con qué
+   * comparar.
+   */
+  reference: SavingsComparison | null;
+  /** Ahorro frente a la referencia (≥ 0). */
+  bySplitting: number;
+  /** Porcentaje del ahorro sobre el costo en la referencia. */
+  bySplittingPct: number;
+  /** Descuento por promociones frente al precio normal publicado (× cantidad). */
+  byPromotions: number;
+  /** Lo que costaría el plan a precio normal (sin promociones). */
+  regularTotal: number;
+}
+
 export interface MaxSavingsPlan {
   lines: PlanLine[];
   byProvider: Array<{ providerId: ProviderId; name: string; lines: PlanLine[]; subtotal: number }>;
@@ -87,6 +105,7 @@ export interface MaxSavingsPlan {
   itemsCovered: number;
   missing: ListItem[];
   comparisons: SavingsComparison[];
+  savings: SavingsSummary;
 }
 
 export interface SingleStoreOption {
@@ -280,5 +299,33 @@ function buildMaxSavings(items: ListItem[], offers: Offer[], providers: Provider
     (a, b) => Number(b.coversWholePlan) - Number(a.coversWholePlan) || b.itemsCompared - a.itemsCompared || b.savings - a.savings,
   );
 
-  return { lines, byProvider, total, itemsCovered: lines.length, missing, comparisons };
+  return { lines, byProvider, total, itemsCovered: lines.length, missing, comparisons, savings: summarizeSavings(lines, comparisons) };
+}
+
+/**
+ * Calcula cuánto ahorra el plan, de forma conservadora:
+ * - Frente a comprar lo mismo en un solo supermercado: se toma el más barato
+ *   de los que tienen todos los productos del plan (así el ahorro no se infla).
+ *   Si ninguno los tiene todos, el que tiene más (y se indica cuántos).
+ *   No se compara contra el mismo supermercado del que sale todo el plan.
+ * - Por promociones: precio normal publicado menos precio pagado.
+ */
+export function summarizeSavings(lines: PlanLine[], comparisons: SavingsComparison[]): SavingsSummary {
+  const regularTotal = lines.reduce((s, l) => s + (l.listPrice && l.listPrice > l.unitPrice ? l.listPrice : l.unitPrice) * l.quantity, 0);
+  const total = lines.reduce((s, l) => s + l.lineTotal, 0);
+  const byPromotions = regularTotal - total;
+
+  const planStores = new Set(lines.map((l) => l.providerId));
+  const candidates = comparisons.filter(
+    (c) => c.itemsCompared > 0 && !(planStores.size === 1 && planStores.has(c.providerId)),
+  );
+  const whole = candidates.filter((c) => c.coversWholePlan);
+  const pool = whole.length > 0 ? whole : candidates;
+  const maxItems = Math.max(0, ...pool.map((c) => c.itemsCompared));
+  const reference =
+    pool.filter((c) => c.itemsCompared === maxItems).sort((a, b) => a.providerCost - b.providerCost)[0] ?? null;
+
+  const bySplitting = reference ? Math.max(0, reference.savings) : 0;
+  const bySplittingPct = reference && reference.providerCost > 0 ? Math.round((bySplitting / reference.providerCost) * 1000) / 10 : 0;
+  return { reference, bySplitting, bySplittingPct, byPromotions, regularTotal };
 }
