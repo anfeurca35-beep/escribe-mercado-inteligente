@@ -327,3 +327,30 @@ test('refinar: la nueva oferta reemplaza solo ese producto en ese supermercado',
   assert.equal(refinementFor(list, 'a', 'Arroz Diana 1 kg')?.text, 'Arroz Diana 1 kg premium');
   assert.equal(refinementFor(list, 'a', 'Arroz Roa 1 kg'), null, 'si cambias el nombre, deja de aplicar');
 });
+
+test('refinar: si el sitio no encuentra nada con la búsqueda refinada, se usan los resultados de lo escrito', async () => {
+  const terms: string[] = [];
+  setFetcherForTests(async (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/robots.txt') return new Response('', { status: 404 });
+    const ft = u.searchParams.get('ft') ?? u.searchParams.get('query') ?? '';
+    terms.push(ft);
+    if (ft.includes('premium')) return new Response('[]');
+    return new Response(
+      JSON.stringify([
+        {
+          productId: '9',
+          productName: 'Arroz Diana 1.000g',
+          brand: 'DIANA',
+          linkText: '9',
+          items: [{ itemId: '9', name: 'Arroz Diana 1.000g', sellers: [{ commertialOffer: { Price: 7800, AvailableQuantity: 5 } }] }],
+        },
+      ]),
+    );
+  });
+  const [o] = await lookupList(buildRegistry().get('d1')!, [{ ...item('a', 'Arroz Diana 1 kg'), match: 'Arroz Diana 1 kg premium' }], 'medellin');
+  assert.ok(terms.some((t) => t.includes('premium')) && terms.some((t) => !t.includes('premium')), 'consulta ambos términos');
+  assert.equal(o.candidates.length, 1, 'el arroz normal sigue como opción');
+  assert.equal(o.candidates[0].match, 'PROBABLE', 'pero no es exacto frente a "premium"');
+  assert.equal(o.selection, 'pendiente');
+});

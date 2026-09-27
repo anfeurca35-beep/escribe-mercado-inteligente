@@ -192,11 +192,21 @@ export async function lookupList(
   return mapLimit(items, ITEM_CONCURRENCY, async (item) => {
     const base = baseOffer(item, provider, fetchedAt);
     const query = parseQuery(item.match ?? item.name);
-    const outcome = await searchOnce(searchTermFor(query));
-
-    if (outcome.kind === 'unavailable') {
-      return { ...base, status: 'PROVEEDOR_NO_DISPONIBLE' as OfferStatus, note: outcome.reason };
+    // Con una búsqueda refinada se consulta también lo que escribió el usuario:
+    // un término más largo puede traer menos resultados en algunos sitios.
+    // Todos los resultados se comparan contra la búsqueda refinada.
+    const terms = [...new Set([searchTermFor(query), searchTermFor(parseQuery(item.name))])];
+    const outcomes = await Promise.all(terms.map(searchOnce));
+    const ok = outcomes.filter((o): o is Extract<SearchOutcome, { kind: 'ok' }> => o.kind === 'ok');
+    if (ok.length === 0) {
+      const failed = outcomes[0] as Extract<SearchOutcome, { kind: 'unavailable' }>;
+      return { ...base, status: 'PROVEEDOR_NO_DISPONIBLE' as OfferStatus, note: failed.reason };
     }
+    const outcome = {
+      products: ok.flatMap((o) => o.products),
+      // La ciudad solo se da por confirmada si todas las respuestas la confirman.
+      confirmedCity: ok.every((o) => o.confirmedCity === city) ? city : null,
+    };
 
     const locationConfirmed = outcome.confirmedCity === city;
     const reasons: string[] = [];
