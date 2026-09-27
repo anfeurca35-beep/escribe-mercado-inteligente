@@ -354,3 +354,32 @@ test('refinar: si el sitio no encuentra nada con la búsqueda refinada, se usan 
   assert.equal(o.candidates[0].match, 'PROBABLE', 'pero no es exacto frente a "premium"');
   assert.equal(o.selection, 'pendiente');
 });
+
+test('producción: el mismo producto publicado dos veces en Rappi (con y sin tienda) cuenta como uno', () => {
+  const conTienda = product('Arroz Diana Premium 1.000g', 9000, { externalId: '900183922_2125617966', seller: 'Natural Market', url: null });
+  const conDireccion = product('Arroz Diana Premium 1.000g', 9000, {
+    externalId: null,
+    seller: null,
+    url: 'https://www.rappi.com.co/p/arroz-diana-premium-1000g-6512625',
+  });
+  const o = offerFor('Arroz Diana 1 kg premium', [conTienda, conDireccion], false);
+  assert.equal(o.candidates.length, 1);
+  assert.equal(o.candidates[0].product.seller, 'Natural Market', 'conserva la tienda');
+  assert.equal(o.candidates[0].product.url, 'https://www.rappi.com.co/p/arroz-diana-premium-1000g-6512625', 'y la dirección');
+  assert.equal(o.selection, 'auto');
+  assert.equal(o.includedInTotals, false, 'Rappi sigue aparte');
+
+  // Si el usuario había elegido la otra publicación, se conserva su clave.
+  const pinKey = 'https://www.rappi.com.co/p/arroz-diana-premium-1000g-6512625';
+  const conPin = buildOffer(base(), parseQuery('Arroz Diana 1 kg premium'), [conTienda, conDireccion], false, null, pinKey);
+  assert.equal(conPin.candidates[0].key, pinKey);
+});
+
+test('dos productos distintos con el mismo nombre (distinta dirección) no se juntan', () => {
+  const o = offerFor('Salsa de tomate Fruco 400 g', [
+    product('Salsa de tomate FRUCO (400 gr)', 8350, { externalId: 'a', url: 'https://tienda.exito.com/salsa-fruco-doypack/p' }),
+    product('Salsa de tomate FRUCO (400 gr)', 15200, { externalId: 'b', url: 'https://tienda.exito.com/salsa-fruco-botella/p' }),
+  ]);
+  assert.equal(o.candidates.length, 2);
+  assert.equal(o.selection, 'pendiente');
+});

@@ -73,9 +73,44 @@ function isRelated(query: ParsedQuery, p: ProviderProduct): boolean {
   return query.descriptors.some((d) => d.length >= 4 && text.includes(` ${d}`));
 }
 
-function dedupe(list: Candidate[]): Candidate[] {
-  const seen = new Set<string>();
-  return list.filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)));
+/**
+ * El mismo producto publicado dos veces (p. ej. en Rappi: una vez con la tienda
+ * y sin dirección, otra con la dirección y sin tienda). Se consideran el mismo
+ * si coinciden nombre y precio y a alguno le falta la dirección, o si tienen la
+ * misma dirección. Dos productos con direcciones distintas nunca se juntan.
+ */
+function sameProduct(a: ProviderProduct, b: ProviderProduct): boolean {
+  if (normalizeText(a.name) !== normalizeText(b.name) || a.price !== b.price) return false;
+  return !a.url || !b.url || a.url === b.url;
+}
+
+function dedupe(list: Candidate[], pin?: string): Candidate[] {
+  const byKey = new Set<string>();
+  const out: Candidate[] = [];
+  for (const c of list) {
+    if (byKey.has(c.key)) continue;
+    byKey.add(c.key);
+    const i = out.findIndex((o) => sameProduct(o.product, c.product));
+    if (i < 0) {
+      out.push(c);
+      continue;
+    }
+    // Se combinan los datos de ambas publicaciones; se conserva la clave que el
+    // usuario eligió, si es una de ellas.
+    const keep = c.key === pin ? c : out[i];
+    const other = keep === c ? out[i] : c;
+    out[i] = {
+      ...keep,
+      product: {
+        ...keep.product,
+        seller: keep.product.seller ?? other.product.seller,
+        url: keep.product.url ?? other.product.url,
+        image: keep.product.image ?? other.product.image ?? null,
+        externalId: keep.product.externalId ?? other.product.externalId,
+      },
+    };
+  }
+  return out;
 }
 
 /**
@@ -96,6 +131,7 @@ export function buildOffer(
       const m = classify(query, product);
       return { key: productKey(product), product, match: m.status, reasons: m.reasons };
     }),
+    pin,
   ).sort(rank);
 
   offer.candidates = classified.filter((c) => c.match === 'EXACTO' || c.match === 'PROBABLE').slice(0, MAX_CANDIDATES);
