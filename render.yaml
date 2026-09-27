@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mercado-inteligente
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run typecheck && npm test && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Opcional: lectura de listas desde foto. Sin esta clave la función queda desactivada.
+      - key: ANTHROPIC_API_KEY
+        sync: false
